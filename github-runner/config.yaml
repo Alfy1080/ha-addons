@@ -1,0 +1,22 @@
+name: "GitHub Actions Runner"
+description: "Self-hosted GitHub Actions runner for automated Home Assistant deployments."
+version: "1.0.1"
+slug: "github_runner"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+map:
+  - config:rw
+options:
+  github_repo: ""
+  github_pat: ""
+  runner_name: "ha-runner"
+  runner_labels: "self-hosted"
+schema:
+  github_repo: str
+  github_pat: password
+  runner_name: str
+  runner_labels: str
+startup: application
