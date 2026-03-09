@@ -1,5 +1,4 @@
-ARG BUILD_FROM=debian:bookworm-slim
-FROM ${BUILD_FROM}
+FROM debian:bookworm-slim
 
 RUN apt-get update && \
     apt-get install -y \
