@@ -7,6 +7,17 @@ PAT=$(jq --raw-output '.github_pat' $CONFIG_PATH)
 RUNNER_NAME=$(jq --raw-output '.runner_name' $CONFIG_PATH)
 LABELS=$(jq --raw-output '.runner_labels' $CONFIG_PATH)
 
+# Add a safety check to ensure the user filled out the configuration UI
+if [ -z "$REPO" ] || [ "$REPO" == "null" ] || [ -z "$PAT" ] || [ "$PAT" == "null" ]; then
+    echo "====================================================================="
+    echo " ERROR: Configuration Missing!"
+    echo " Please go to the Add-on Configuration tab in Home Assistant,"
+    echo " fill in your 'github_repo' and 'github_pat', and restart the add-on."
+    echo "====================================================================="
+    sleep 60
+    exit 1
+fi
+
 echo "Starting GitHub Runner setup for $REPO..."
 
 ARCH=$(uname -m)
@@ -16,15 +27,25 @@ elif [ "$ARCH" = "armv7l" ]; then RUNNER_ARCH="arm";
 else echo "Unsupported architecture: $ARCH"; exit 1; fi
 
 if [ ! -f "config.sh" ]; then
-    echo "Downloading GitHub Runner for $RUNNER_ARCH..."
-    RUNNER_VERSION=$(curl -s "[https://api.github.com/repos/actions/runner/releases/latest](https://api.github.com/repos/actions/runner/releases/latest)" | jq -r '.tag_name' | sed 's/v//')
-    curl -o actions-runner-linux.tar.gz -L "[https://github.com/actions/runner/releases/download/v$](https://github.com/actions/runner/releases/download/v$){RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz"
+    echo "Checking latest runner version for $RUNNER_ARCH..."
+    # We use the PAT here to prevent GitHub API rate limiting
+    RUNNER_VERSION=$(curl -s -H "Authorization: token ${PAT}" "https://api.github.com/repos/actions/runner/releases/latest" | jq -r '.tag_name' | sed 's/v//')
+    
+    if [ -z "$RUNNER_VERSION" ] || [ "$RUNNER_VERSION" == "null" ]; then
+        echo "Failed to fetch runner version. Check PAT permissions."
+        exit 1
+    fi
+
+    DOWNLOAD_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz"
+    echo "Downloading from: $DOWNLOAD_URL"
+    
+    curl -o actions-runner-linux.tar.gz -L "$DOWNLOAD_URL"
     tar xzf ./actions-runner-linux.tar.gz
     rm actions-runner-linux.tar.gz
 fi
 
 echo "Requesting runner registration token..."
-REG_TOKEN=$(curl -sX POST -H "Authorization: token ${PAT}" -H "Accept: application/vnd.github.v3+json" "[https://api.github.com/repos/$](https://api.github.com/repos/$){REPO}/actions/runners/registration-token" | jq -r '.token')
+REG_TOKEN=$(curl -sX POST -H "Authorization: token ${PAT}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${REPO}/actions/runners/registration-token" | jq -r '.token')
 
 if [ "$REG_TOKEN" == "null" ] || [ -z "$REG_TOKEN" ]; then
     echo "Failed to get registration token. Check your PAT permissions and Repo name."
@@ -32,11 +53,11 @@ if [ "$REG_TOKEN" == "null" ] || [ -z "$REG_TOKEN" ]; then
 fi
 
 echo "Configuring runner..."
-./config.sh --url "[https://github.com/$](https://github.com/$){REPO}" --token "${REG_TOKEN}" --name "${RUNNER_NAME}" --labels "${LABELS}" --unattended --replace
+./config.sh --url "https://github.com/${REPO}" --token "${REG_TOKEN}" --name "${RUNNER_NAME}" --labels "${LABELS}" --unattended --replace
 
 cleanup() {
     echo "Removing runner..."
-    REM_TOKEN=$(curl -sX POST -H "Authorization: token ${PAT}" -H "Accept: application/vnd.github.v3+json" "[https://api.github.com/repos/$](https://api.github.com/repos/$){REPO}/actions/runners/remove-token" | jq -r '.token')
+    REM_TOKEN=$(curl -sX POST -H "Authorization: token ${PAT}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${REPO}/actions/runners/remove-token" | jq -r '.token')
     ./config.sh remove --token "${REM_TOKEN}"
     exit 0
 }
