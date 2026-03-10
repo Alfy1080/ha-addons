@@ -1,0 +1,18 @@
+name: "Honeygain"
+description: "Earn passive income by sharing your unused internet connection."
+version: "1.0.0"
+slug: "honeygain"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+options:
+  email: ""
+  password: ""
+  device_name: "HomeAssistantOS"
+schema:
+  email: str
+  password: password
+  device_name: str
+startup: services
