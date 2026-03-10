@@ -1,6 +1,6 @@
 name: "Honeygain"
 description: "Earn passive income by sharing your unused internet connection."
-version: "1.0.0"
+version: "1.0.1"
 slug: "honeygain"
 init: false
 arch:
