@@ -48,6 +48,24 @@ set_env_bool "version_api" "VERSION"
 set_env_bool "volumes" "VOLUMES"
 
 echo "Starting DockerProxy..."
-# Execute the upstream image's original entrypoint from the PATH
-# Omitting the -f flag ensures the wrapper script generates the config template
-exec docker-entrypoint.sh haproxy -W -db
+
+# The exact location of haproxy.cfg can vary between base image updates.
+# We will safely locate it before starting HAProxy.
+if [ -f "/usr/local/etc/haproxy/haproxy.cfg" ]; then
+    HAPROXY_CFG="/usr/local/etc/haproxy/haproxy.cfg"
+elif [ -f "/etc/haproxy/haproxy.cfg" ]; then
+    HAPROXY_CFG="/etc/haproxy/haproxy.cfg"
+else
+    # Fallback: search common directories
+    HAPROXY_CFG=$(find /usr /etc /opt -name "haproxy.cfg" -type f 2>/dev/null | head -n 1)
+fi
+
+if [ -z "$HAPROXY_CFG" ]; then
+    echo "Fatal Error: haproxy.cfg could not be found anywhere in the container!"
+    exit 1
+fi
+
+echo "Found configuration at: $HAPROXY_CFG"
+
+# Execute HAProxy using the dynamically discovered config path
+exec docker-entrypoint.sh haproxy -W -db -f "$HAPROXY_CFG"
