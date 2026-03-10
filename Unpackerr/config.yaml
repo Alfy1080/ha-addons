@@ -1,0 +1,51 @@
+name: "Unpackerr"
+description: "Extracts downloads so Radarr, Sonarr, Lidarr or Readarr may import them."
+version: "1.0.0"
+slug: "unpackerr"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+map:
+  - share:rw
+  - media:rw
+ports:
+  5656/tcp: 5656
+ports_description:
+  5656/tcp: "Web UI / Metrics"
+options:
+  timezone: "Europe/Bucharest"
+  webserver:
+    ip: "0.0.0.0"
+    port: 5656
+    url_base: ""
+  sonarr:
+    url: "http://192.168.31.217:8989/sonarr"
+    api_key: ""
+    paths:
+      - "/share/SynologyTorrents/Sonarr"
+      - "/share/SynologyTorrents"
+  radarr:
+    url: "http://192.168.31.217:7878/radarr"
+    api_key: ""
+    paths:
+      - "/share/SynologyTorrents/Radarr"
+      - "/share/SynologyTorrents"
+schema:
+  timezone: str
+  webserver:
+    ip: str
+    port: port
+    url_base: str
+  sonarr:
+    url: str
+    api_key: password
+    paths:
+      - str
+  radarr:
+    url: str
+    api_key: password
+    paths:
+      - str
+startup: services
