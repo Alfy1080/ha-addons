@@ -49,4 +49,5 @@ set_env_bool "volumes" "VOLUMES"
 
 echo "Starting DockerProxy..."
 # Execute the upstream image's original entrypoint from the PATH
-exec docker-entrypoint.sh haproxy -W -db -f /usr/local/etc/haproxy/haproxy.cfg
+# Omitting the -f flag ensures the wrapper script generates the config template
+exec docker-entrypoint.sh haproxy -W -db
