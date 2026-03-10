@@ -9,6 +9,7 @@ arch:
   - armv7
 startup: services
 boot: auto
+init: false
 privileged: true
 ports:
   2375/tcp: 2375
@@ -43,7 +44,7 @@ options:
   version_api: true
   volumes: false
 schema:
-  log_level: list(info, debug, warn, error)
+  log_level: list(info,debug,warn,error)
   services: bool
   post: bool
   info: bool
