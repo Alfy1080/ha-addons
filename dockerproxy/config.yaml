@@ -1,5 +1,5 @@
 name: DockerProxy
-version: "1.0.1"
+version: "1.0.2"
 slug: dockerproxy
 description: "Proxy over your Docker socket to restrict which requests it accepts."
 url: "https://github.com/Tecnativa/docker-socket-proxy"
