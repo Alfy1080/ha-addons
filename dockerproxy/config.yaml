@@ -1,0 +1,74 @@
+name: DockerProxy
+version: "1.0.0"
+slug: dockerproxy
+description: "Proxy over your Docker socket to restrict which requests it accepts."
+url: "https://github.com/Tecnativa/docker-socket-proxy"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: services
+boot: auto
+privileged: true
+ports:
+  2375/tcp: 2375
+options:
+  log_level: info
+  services: true
+  post: true
+  info: true
+  exec: true
+  containers: true
+  nodes: true
+  networks: true
+  commit: true
+  plugins: true
+  images: true
+  swarm: true
+  distribution: true
+  build: true
+  configs: true
+  session: false
+  allow_restarts: false
+  allow_stop: false
+  allow_start: false
+  auth: false
+  disable_ipv6: false
+  events: true
+  grpc: false
+  ping: true
+  secrets: false
+  system: false
+  tasks: false
+  version_api: true
+  volumes: false
+schema:
+  log_level: list(info, debug, warn, error)
+  services: bool
+  post: bool
+  info: bool
+  exec: bool
+  containers: bool
+  nodes: bool
+  networks: bool
+  commit: bool
+  plugins: bool
+  images: bool
+  swarm: bool
+  distribution: bool
+  build: bool
+  configs: bool
+  session: bool
+  allow_restarts: bool
+  allow_stop: bool
+  allow_start: bool
+  auth: bool
+  disable_ipv6: bool
+  events: bool
+  grpc: bool
+  ping: bool
+  secrets: bool
+  system: bool
+  tasks: bool
+  version_api: bool
+  volumes: bool
