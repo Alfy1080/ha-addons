@@ -18,8 +18,9 @@ WORKDIR /app
 # Copy the Honeygain app files from the official image stage
 COPY --from=honeygain-bin /app /app
 
-# Copy the required shared library (libhg.so*) from the official image
+# Copy the required shared libraries from the official image
 COPY --from=honeygain-bin /usr/lib/libhg* /usr/lib/
+COPY --from=honeygain-bin /usr/lib/libmsquic* /usr/lib/
 
 # Configure the runtime environment & library path
 ENV DEBIAN_FRONTEND=noninteractive
