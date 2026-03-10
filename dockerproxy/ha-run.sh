@@ -48,5 +48,5 @@ set_env_bool "version_api" "VERSION"
 set_env_bool "volumes" "VOLUMES"
 
 echo "Starting DockerProxy..."
-# The upstream image entrypoint handles config generation
-exec /docker-entrypoint.sh haproxy -f /tmp/haproxy.cfg
+# Execute the upstream image's original run.sh to handle config generation
+exec /run.sh
