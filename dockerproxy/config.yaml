@@ -10,9 +10,10 @@ arch:
 startup: services
 boot: auto
 init: false
-privileged: true
+# Use 'full_access' instead of 'privileged' to grant full container privileges
+full_access: true
 ports:
-  2375/tcp: 2375
+  "2375/tcp": 2375
 options:
   log_level: info
   services: true
@@ -44,7 +45,8 @@ options:
   version_api: true
   volumes: false
 schema:
-  log_level: list(info,debug,warn,error)
+  # Changed from list() to match() so it validates as a string enum
+  log_level: match(info|debug|warn|error)
   services: bool
   post: bool
   info: bool
