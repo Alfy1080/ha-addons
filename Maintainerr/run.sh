@@ -3,6 +3,28 @@ set -e
 
 echo "Configuring Maintainerr persistence..."
 
+# Parse Home Assistant configuration options
+if [ -f /data/options.json ]; then
+    # Timezone configuration
+    export TZ=$(jq --raw-output '.timezone // "UTC"' /data/options.json)
+    
+    # Debug configuration
+    DEBUG_MODE=$(jq --raw-output '.debug // false' /data/options.json)
+    if [ "$DEBUG_MODE" == "true" ]; then
+        export LOG_LEVEL="debug"
+    fi
+
+    # Optional: Base Path (Crucial for Ingress or Reverse Proxy)
+    USER_BASE_PATH=$(jq --raw-output '.base_path // empty' /data/options.json)
+    if [ -n "$USER_BASE_PATH" ]; then
+        echo "Setting BASE_PATH to $USER_BASE_PATH"
+        export BASE_PATH="$USER_BASE_PATH"
+    fi
+fi
+
+# Force listening on all interfaces to ensure Home Assistant can connect
+export HOST=0.0.0.0
+
 PERSISTENT_DIR="/data"
 APP_DATA_DIR="/opt/data"
 
