@@ -13,10 +13,6 @@ RUN if [ -f /etc/alpine-release ]; then \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Redirect Maintainerr's internal data directory to Home Assistant's /share map
-# This guarantees data persists across reboots and is easily accessible on the host machine
-RUN rm -rf /opt/data && ln -s /share/Maintainerr /opt/data
-
 # Configure the runtime environment
 ENV DEBIAN_FRONTEND=noninteractive
 

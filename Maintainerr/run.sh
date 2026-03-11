@@ -1,35 +1,27 @@
-#!/bin/bash
-set -e
+#!/usr/bin/with-contenv bashio
 
-CONFIG_PATH=/data/options.json
+bashio::log.info "Configuring Maintainerr persistence..."
 
-# Extract basic configuration from Home Assistant UI
-export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
-export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
-export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
-
-# We use the Home Assistant share directory for persistent storage
-export PERSISTENT_DIR="/share/Maintainerr"
-
-echo "======================================================"
-echo " Starting Maintainerr Add-on for Home Assistant"
-echo " Timezone set to: $TZ"
-echo " Debug mode: $DEBUG"
-if [ -n "$BASE_PATH" ]; then
-    echo " Base Path: $BASE_PATH"
+# 1. Handle the /opt/data directory
+# Maintainerr expects data in /opt/data. We must link this to the persistent /data volume.
+# If /opt/data exists (as a dir or wrong link), remove it so we can link it correctly.
+if [ "$(readlink /opt/data)" != "/data" ]; then
+    bashio::log.info "Configuring /opt/data to point to persistent /data storage"
+    rm -rf /opt/data
+    ln -s /data /opt/data
 fi
-echo " Persistent Directory: $PERSISTENT_DIR"
-echo "======================================================"
 
-echo "Initializing persistent storage..."
+# 3. Ensure permissions are correct
+# Maintainerr typically runs as user 1000. Ensure the persistent data is writable by them.
+bashio::log.info "Fixing permissions on /data"
+chown -R 1000:1000 /data
 
-# Ensure the shared directory exists on the host
-mkdir -p "$PERSISTENT_DIR"
+bashio::log.info "Starting Maintainerr application..."
 
-# Bypass the app's native start.sh wrapper to prevent it from resetting our environment variables.
-# We run directly as root to avoid Permission Denied errors when writing to Home Assistant's mapped volumes.
-cd /opt/app
-
-echo "Launching Maintainerr natively..."
-# The internal app will try to write to /opt/data, which is now safely symlinked to /share/Maintainerr
-exec node dist/main
+# 4. Start the application
+# Note: You should check the base Maintainerr Dockerfile for the exact startup command.
+# It is often 'node dist/main' or a specific start script.
+# Assuming the base image adds the cmd to path or sets a working directory:
+exec /usr/local/bin/docker-entrypoint.sh  # Example: use the base image's entrypoint if available
+# OR if you know the direct command:
+# cd /app && exec node apps/server/dist/main.js
