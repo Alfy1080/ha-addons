@@ -8,6 +8,9 @@ export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
 export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
 export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
 
+# Use the HA OS Addon Config directory (mounted natively as /config in the container)
+export DATA_DIR="/config"
+
 echo "======================================================"
 echo " Starting Maintainerr Add-on for Home Assistant"
 echo " Timezone set to: $TZ"
@@ -15,24 +18,21 @@ echo " Debug mode: $DEBUG"
 if [ -n "$BASE_PATH" ]; then
     echo " Base Path: $BASE_PATH"
 fi
+echo " Data Directory: $DATA_DIR"
 echo "======================================================"
 
-# The ultimate persistence fix: OS-level directory binding.
-# Because /opt/data is defined as a VOLUME in the base Docker image, symlinks fail 
-# and environment variables are often dropped by the start.sh script.
-# By using mount --bind, we force the OS to map the persistent /data folder
-# directly over /opt/data. The application requires zero modification.
+echo "Configuring persistent storage to use HA addon_config..."
 
-echo "Binding Home Assistant persistent storage to application directory..."
+# Ensure the addon config directory exists and has the correct permissions
+mkdir -p "$DATA_DIR"
+chown -R node:node "$DATA_DIR" || true
 
-# Ensure the target directory exists just in case
-mkdir -p /opt/data
+# Forcefully patch any hardcoded references from /opt/data to /config
+# This guarantees the app writes to the persistent addon_configs directory
+if [ -f "/opt/app/start.sh" ]; then
+    sed -i "s|/opt/data|$DATA_DIR|g" /opt/app/start.sh || true
+fi
+find /opt/app -type f -name "*.js" -exec sed -i "s|/opt/data|$DATA_DIR|g" {} + 2>/dev/null || true
 
-# Mount the persistent /data folder over the ephemeral /opt/data folder
-mount --bind /data /opt/data
-
-# Fix permissions so the internal node user can read/write to the newly bound directory
-chown -R node:node /opt/data || true
-
-# Execute the original Maintainerr start script
-exec /opt/app/start.sh
+# Execute the original Maintainerr start script natively as the 'node' user
+exec su node -s /bin/bash -c "export DATA_DIR=$DATA_DIR && /opt/app/start.sh"

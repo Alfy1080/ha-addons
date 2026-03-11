@@ -1,6 +1,6 @@
 name: "Maintainerr"
 description: "Looks and smells like Overseerr, does the opposite. Maintenance tool for the Plex ecosystem."
-version: "1.0.4"
+version: "1.0.5"
 slug: "maintainerr"
 init: false
 arch:
@@ -10,6 +10,7 @@ arch:
 map:
   - share:rw
   - media:rw
+  - addon_config:rw
 ports:
   6246/tcp: 6246
 ports_description:
