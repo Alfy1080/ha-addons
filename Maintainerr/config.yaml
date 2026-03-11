@@ -1,6 +1,6 @@
 name: "Maintainerr"
 description: "Looks and smells like Overseerr, does the opposite. Maintenance tool for the Plex ecosystem."
-version: "1.1.4"
+version: "1.1.5"
 slug: "maintainerr"
 init: false
 arch:
