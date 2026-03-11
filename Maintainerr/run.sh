@@ -18,18 +18,22 @@ mkdir -p "$DATA_DIR"
 # If it can't write to /data, it will silently fail to save databases or crash.
 chown -R node:node "$DATA_DIR" || true
 
-echo "Patching Maintainerr to use Home Assistant's persistent storage..."
-# The base Docker image defines /opt/data as a VOLUME, so symlinking the folder fails.
-# Instead, we strictly patch the app's source and start script to point directly to /data.
-if [ -f "/opt/app/start.sh" ]; then
-    # Replace any hardcoded paths in the startup script
-    sed -i 's|/opt/data|/data|g' /opt/app/start.sh || true
-    # Force the environment variable inside the script just in case it drops envs
-    sed -i '1s|^|export DATA_DIR="/data"\n|' /opt/app/start.sh || true
-fi
+echo "Enforcing Home Assistant's persistent storage natively..."
 
-# Patch compiled Javascript defaults in case process.env.DATA_DIR is ignored
-find /opt/app -type f -name "*.js" -exec sed -i 's|/opt/data|/data|g' {} + 2>/dev/null || true
+# Method 1: Inject the environment variable natively into the Node runtime.
+# This guarantees process.env.DATA_DIR is always correct, even if startup shells drop it.
+cat << 'EOF' > /opt/app/ha_override.js
+process.env.DATA_DIR = '/data';
+EOF
+export NODE_OPTIONS="--require /opt/app/ha_override.js"
+
+# Method 2: Ensure a local .env file reflects the change for dotenv-based parsers
+echo "DATA_DIR=/data" > /opt/app/.env
+
+# Method 3: Safely patch any hardcoded shell paths without breaking the shebang header
+if [ -f "/opt/app/start.sh" ]; then
+    sed -i 's|/opt/data|/data|g' /opt/app/start.sh || true
+fi
 
 echo "======================================================"
 echo " Starting Maintainerr Add-on for Home Assistant"
