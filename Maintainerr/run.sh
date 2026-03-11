@@ -1,84 +1,40 @@
 #!/bin/bash
 set -e
 
-echo "Configuring Maintainerr persistence..."
+CONFIG_PATH=/data/options.json
 
-# Parse Home Assistant configuration options
-if [ -f /data/options.json ]; then
-    # Timezone configuration
-    export TZ=$(jq --raw-output '.timezone // "UTC"' /data/options.json)
-    
-    # Debug configuration
-    DEBUG_MODE=$(jq --raw-output '.debug // false' /data/options.json)
-    if [ "$DEBUG_MODE" == "true" ]; then
-        export LOG_LEVEL="debug"
-    fi
+# Extract basic configuration from Home Assistant UI
+export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
+export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
+export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
 
-    # Optional: Base Path (Crucial for Ingress or Reverse Proxy)
-    USER_BASE_PATH=$(jq --raw-output '.base_path // empty' /data/options.json)
-    if [ -n "$USER_BASE_PATH" ]; then
-        echo "Setting BASE_PATH to $USER_BASE_PATH"
-        export BASE_PATH="$USER_BASE_PATH"
-    fi
+# We use the Home Assistant share directory for persistent storage
+export PERSISTENT_DIR="/share/Maintainerr"
+
+echo "======================================================"
+echo " Starting Maintainerr Add-on for Home Assistant"
+echo " Timezone set to: $TZ"
+echo " Debug mode: $DEBUG"
+if [ -n "$BASE_PATH" ]; then
+    echo " Base Path: $BASE_PATH"
 fi
+echo " Persistent Directory: $PERSISTENT_DIR"
+echo "======================================================"
 
-# Force listening on all interfaces to ensure Home Assistant can connect
-export HOST=0.0.0.0
+echo "Initializing persistent storage..."
 
-PERSISTENT_DIR="/data"
-APP_DATA_DIR="/opt/data"
-
-# Ensure persistent directory exists
+# Ensure the shared directory exists on the host
 mkdir -p "$PERSISTENT_DIR"
 
-# 1. Persistence Strategy: Bind Mount
-# This maps /data over /opt/data so the app writes to persistence transparently.
-echo "Attempting to bind mount $PERSISTENT_DIR to $APP_DATA_DIR..."
-if mount --bind "$PERSISTENT_DIR" "$APP_DATA_DIR" 2>/dev/null; then
-    echo "Success: Bind mount established."
-else
-    echo "Bind mount failed (likely permission issues). Falling back to application patching."
-    
-    # 2. Persistence Strategy: Patching (Fallback)
-    # If /opt/data has content and /data is empty, copy defaults to /data
-    if [ -d "$APP_DATA_DIR" ] && [ -z "$(ls -A $PERSISTENT_DIR)" ]; then
-        echo "Initializing persistent data from image defaults..."
-        cp -a $APP_DATA_DIR/. $PERSISTENT_DIR/
-    fi
+# Create the symlink at RUNTIME because the base image defines /opt/data as a VOLUME
+echo "Linking /opt/data to Home Assistant /share..."
+rm -rf /opt/data
+ln -s "$PERSISTENT_DIR" /opt/data
 
-    echo "Searching for application files to patch..."
-    # Locate main.js in common locations
-    TARGET_FILES=$(find /opt/app /app /usr/src/app -name "main.js" 2>/dev/null || true)
-    
-    PATCHED=false
-    for file in $TARGET_FILES; do
-        if grep -q "$APP_DATA_DIR" "$file"; then
-            echo "Patching $file..."
-            sed -i "s|$APP_DATA_DIR|$PERSISTENT_DIR|g" "$file"
-            PATCHED=true
-        fi
-    done
-    
-    if [ "$PATCHED" = "false" ]; then
-        echo "WARNING: No files patched. Persistence may not work if bind mount also failed."
-    fi
-fi
+# Bypass the app's native start.sh wrapper to prevent it from resetting our environment variables.
+# We run directly as root to avoid Permission Denied errors when writing to Home Assistant's mapped volumes.
+cd /opt/app
 
-echo "Fixing permissions on data directories..."
-chown -R 1000:1000 "$PERSISTENT_DIR"
-chown -R 1000:1000 "$APP_DATA_DIR" || true
-
-echo "Starting Maintainerr application..."
-
-# 4. Start the application
-# We need to be in the app directory for 'npm start' or 'node dist/main' to work.
-# We guess the location based on where we might have found files, or standard paths.
-APP_DIR=$(find /opt/app /app /usr/src/app -name "package.json" -print -quit | xargs dirname)
-if [ -n "$APP_DIR" ]; then cd "$APP_DIR"; fi
-
-# Use npm start if available, otherwise try to run node directly
-if [ -f "package.json" ]; then
-    exec npm start
-else
-    exec node dist/main
-fi
+echo "Launching Maintainerr natively..."
+# The internal app will try to write to /opt/data, which is now safely symlinked to /share/Maintainerr
+exec node dist/main
