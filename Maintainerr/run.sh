@@ -3,48 +3,60 @@ set -e
 
 echo "Configuring Maintainerr persistence..."
 
-# 1. Handle the /opt/data directory
-# Maintainerr expects data in /opt/data. We must link this to the persistent /data volume.
-# If /opt/data exists (as a dir or wrong link), remove it so we can link it correctly.
-if [ "$(readlink /opt/data)" != "/data" ]; then
-    # Try to remove /opt/data. If it's a Docker volume, this will fail with "Resource busy".
-    if rm -rf /opt/data 2>/dev/null; then
-        echo "Configuring /opt/data to point to persistent /data storage"
-        ln -s /data /opt/data
-    else
-        echo "Unable to replace /opt/data (Volume detected). Patching application to use /data directly..."
-        
-        # If /opt/data has content and /data is empty, copy the default content to /data
-        if [ -d "/opt/data" ] && [ -z "$(ls -A /data)" ]; then
-            echo "Initializing persistent data from image defaults..."
-            cp -a /opt/data/. /data/
-        fi
+PERSISTENT_DIR="/data"
+APP_DATA_DIR="/opt/data"
 
-        # Patch the application source code to use /data instead of /opt/data
-        # We search recursively in the current directory (.) to find all occurrences
-        echo "Searching for files to patch..."
-        grep -rl "/opt/data" . 2>/dev/null | while read -r file; do
-            echo "Patching $file"
-            sed -i 's|/opt/data|/data|g' "$file"
-        done || echo "Patching complete (or no files found)."
-        
-        # Safety: Ensure the original volume is also writable, just in case patching missed something
-        # and the app still tries to write there.
-        chown -R 1000:1000 /opt/data || true
+# Ensure persistent directory exists
+mkdir -p "$PERSISTENT_DIR"
+
+# 1. Persistence Strategy: Bind Mount
+# This maps /data over /opt/data so the app writes to persistence transparently.
+echo "Attempting to bind mount $PERSISTENT_DIR to $APP_DATA_DIR..."
+if mount --bind "$PERSISTENT_DIR" "$APP_DATA_DIR" 2>/dev/null; then
+    echo "Success: Bind mount established."
+else
+    echo "Bind mount failed (likely permission issues). Falling back to application patching."
+    
+    # 2. Persistence Strategy: Patching (Fallback)
+    # If /opt/data has content and /data is empty, copy defaults to /data
+    if [ -d "$APP_DATA_DIR" ] && [ -z "$(ls -A $PERSISTENT_DIR)" ]; then
+        echo "Initializing persistent data from image defaults..."
+        cp -a $APP_DATA_DIR/. $PERSISTENT_DIR/
+    fi
+
+    echo "Searching for application files to patch..."
+    # Locate main.js in common locations
+    TARGET_FILES=$(find /opt/app /app /usr/src/app -name "main.js" 2>/dev/null || true)
+    
+    PATCHED=false
+    for file in $TARGET_FILES; do
+        if grep -q "$APP_DATA_DIR" "$file"; then
+            echo "Patching $file..."
+            sed -i "s|$APP_DATA_DIR|$PERSISTENT_DIR|g" "$file"
+            PATCHED=true
+        fi
+    done
+    
+    if [ "$PATCHED" = "false" ]; then
+        echo "WARNING: No files patched. Persistence may not work if bind mount also failed."
     fi
 fi
 
-# 3. Ensure permissions are correct
-# Maintainerr typically runs as user 1000. Ensure the persistent data is writable by them.
-echo "Fixing permissions on /data"
-chown -R 1000:1000 /data
+echo "Fixing permissions on data directories..."
+chown -R 1000:1000 "$PERSISTENT_DIR"
+chown -R 1000:1000 "$APP_DATA_DIR" || true
 
 echo "Starting Maintainerr application..."
 
 # 4. Start the application
-# Note: You should check the base Maintainerr Dockerfile for the exact startup command.
-# It is often 'node dist/main' or a specific start script.
-# Assuming the base image adds the cmd to path or sets a working directory:
-exec /usr/local/bin/docker-entrypoint.sh "$@"
-# OR if you know the direct command:
-# cd /app && exec node apps/server/dist/main.js
+# We need to be in the app directory for 'npm start' or 'node dist/main' to work.
+# We guess the location based on where we might have found files, or standard paths.
+APP_DIR=$(find /opt/app /app /usr/src/app -name "package.json" -print -quit | xargs dirname)
+if [ -n "$APP_DIR" ]; then cd "$APP_DIR"; fi
+
+# Use npm start if available, otherwise try to run node directly
+if [ -f "package.json" ]; then
+    exec npm start
+else
+    exec node dist/main
+fi
