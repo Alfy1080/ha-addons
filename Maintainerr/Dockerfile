@@ -6,10 +6,10 @@ USER root
 
 # Install jq to parse options.json. We use a conditional check to handle both Alpine and Debian bases
 RUN if [ -f /etc/alpine-release ]; then \
-        apk add --no-cache jq bash tzdata ca-certificates; \
+        apk add --no-cache jq bash tzdata ca-certificates sed; \
     else \
         apt-get update && \
-        apt-get install -y jq bash tzdata ca-certificates && \
+        apt-get install -y jq bash tzdata ca-certificates sed && \
         rm -rf /var/lib/apt/lists/*; \
     fi
 

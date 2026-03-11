@@ -21,8 +21,16 @@ if [ "$(readlink /opt/data)" != "/data" ]; then
         fi
 
         # Patch the application source code to use /data instead of /opt/data
-        # We search in 'dist' where the compiled JS typically lives
-        grep -rl "/opt/data" dist 2>/dev/null | xargs sed -i 's|/opt/data|/data|g' || echo "Patch warning: No files found to patch."
+        # We search recursively in the current directory (.) to find all occurrences
+        echo "Searching for files to patch..."
+        grep -rl "/opt/data" . 2>/dev/null | while read -r file; do
+            echo "Patching $file"
+            sed -i 's|/opt/data|/data|g' "$file"
+        done || echo "Patching complete (or no files found)."
+        
+        # Safety: Ensure the original volume is also writable, just in case patching missed something
+        # and the app still tries to write there.
+        chown -R 1000:1000 /opt/data || true
     fi
 fi
 
