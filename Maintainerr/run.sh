@@ -7,16 +7,23 @@ echo "Configuring Maintainerr persistence..."
 # Maintainerr expects data in /opt/data. We must link this to the persistent /data volume.
 # If /opt/data exists (as a dir or wrong link), remove it so we can link it correctly.
 if [ "$(readlink /opt/data)" != "/data" ]; then
-    echo "Configuring /opt/data to point to persistent /data storage"
-    
-    # If /opt/data has content and /data is empty, copy the default content to /data
-    if [ -d "/opt/data" ] && [ -z "$(ls -A /data)" ]; then
-        echo "Initializing persistent data from image defaults..."
-        cp -a /opt/data/. /data/
-    fi
+    # Try to remove /opt/data. If it's a Docker volume, this will fail with "Resource busy".
+    if rm -rf /opt/data 2>/dev/null; then
+        echo "Configuring /opt/data to point to persistent /data storage"
+        ln -s /data /opt/data
+    else
+        echo "Unable to replace /opt/data (Volume detected). Patching application to use /data directly..."
+        
+        # If /opt/data has content and /data is empty, copy the default content to /data
+        if [ -d "/opt/data" ] && [ -z "$(ls -A /data)" ]; then
+            echo "Initializing persistent data from image defaults..."
+            cp -a /opt/data/. /data/
+        fi
 
-    rm -rf /opt/data
-    ln -s /data /opt/data
+        # Patch the application source code to use /data instead of /opt/data
+        # We search in 'dist' where the compiled JS typically lives
+        grep -rl "/opt/data" dist 2>/dev/null | xargs sed -i 's|/opt/data|/data|g' || echo "Patch warning: No files found to patch."
+    fi
 fi
 
 # 3. Ensure permissions are correct
