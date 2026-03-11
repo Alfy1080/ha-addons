@@ -21,4 +21,4 @@ COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
 # Override the original entrypoint with our script
-CMD [ "/run.sh" ]
+ENTRYPOINT [ "/run.sh" ]
