@@ -14,14 +14,18 @@ export DATA_DIR="/data"
 # Ensure the data directory exists
 mkdir -p "$DATA_DIR"
 
-echo "======================================================"
-echo " Starting Maintainerr Add-on for Home Assistant"
-echo " Timezone set to: $TZ"
-echo " Debug mode: $DEBUG"
-echo " Data Directory: $DATA_DIR"
-if [ -n "$BASE_PATH" ]; then
-    echo " Base Path: $BASE_PATH"
+# Symlink Maintainerr's default data directory to Home Assistant's persistent storage
+# This ensures any hardcoded paths in the app also write to the persistent drive
+if [ ! -L "/opt/data" ]; then
+    echo "Linking /opt/data to persistent /data directory..."
+    # Move any existing default data into the persistent folder before linking
+    if [ -d "/opt/data" ]; then
+        cp -r /opt/data/* "$DATA_DIR/" 2>/dev/null || true
+        rm -rf /opt/data
+    fi
+    ln -sf "$DATA_DIR" /opt/data
 fi
+
 echo "======================================================"
 
 # Execute the original Maintainerr start script
