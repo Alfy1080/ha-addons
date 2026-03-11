@@ -8,8 +8,8 @@ export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
 export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
 export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
 
-# Use the Home Assistant share directory for persistent storage
-export DATA_DIR="/share/Maintainerr"
+# We use the Home Assistant share directory for persistent storage
+export PERSISTENT_DIR="/share/Maintainerr"
 
 echo "======================================================"
 echo " Starting Maintainerr Add-on for Home Assistant"
@@ -18,17 +18,18 @@ echo " Debug mode: $DEBUG"
 if [ -n "$BASE_PATH" ]; then
     echo " Base Path: $BASE_PATH"
 fi
-echo " Data Directory: $DATA_DIR"
+echo " Persistent Directory: $PERSISTENT_DIR"
 echo "======================================================"
 
 echo "Initializing persistent storage..."
 
-# Ensure the shared directory exists
-mkdir -p "$DATA_DIR"
+# Ensure the shared directory exists on the host
+mkdir -p "$PERSISTENT_DIR"
 
 # Bypass the app's native start.sh wrapper to prevent it from resetting our environment variables.
 # We run directly as root to avoid Permission Denied errors when writing to Home Assistant's mapped volumes.
 cd /opt/app
 
 echo "Launching Maintainerr natively..."
-exec env DATA_DIR="$DATA_DIR" node dist/main
+# The internal app will try to write to /opt/data, which is now safely symlinked to /share/Maintainerr
+exec node dist/main
