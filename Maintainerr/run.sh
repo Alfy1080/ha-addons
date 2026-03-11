@@ -21,18 +21,14 @@ fi
 echo " Data Directory: $DATA_DIR"
 echo "======================================================"
 
-echo "Configuring persistent storage to use HA addon_config..."
+echo "Initializing persistent storage..."
 
-# Ensure the addon config directory exists and has the correct permissions
+# Ensure the addon config directory exists
 mkdir -p "$DATA_DIR"
-chown -R node:node "$DATA_DIR" || true
 
-# Forcefully patch any hardcoded references from /opt/data to /config
-# This guarantees the app writes to the persistent addon_configs directory
-if [ -f "/opt/app/start.sh" ]; then
-    sed -i "s|/opt/data|$DATA_DIR|g" /opt/app/start.sh || true
-fi
-find /opt/app -type f -name "*.js" -exec sed -i "s|/opt/data|$DATA_DIR|g" {} + 2>/dev/null || true
+# Bypass the app's native start.sh wrapper to prevent it from resetting our environment variables.
+# We run directly as root to avoid Permission Denied errors when writing to Home Assistant's mapped volumes.
+cd /opt/app
 
-# Execute the original Maintainerr start script natively as the 'node' user
-exec su node -s /bin/bash -c "export DATA_DIR=$DATA_DIR && /opt/app/start.sh"
+echo "Launching Maintainerr natively..."
+exec env DATA_DIR="$DATA_DIR" node dist/main
