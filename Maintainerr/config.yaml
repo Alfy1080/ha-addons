@@ -1,0 +1,25 @@
+name: "Maintainerr"
+description: "Looks and smells like Overseerr, does the opposite. Maintenance tool for the Plex ecosystem."
+version: "1.0.0"
+slug: "maintainerr"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+map:
+  - share:rw
+  - media:rw
+ports:
+  6246/tcp: 6246
+ports_description:
+  6246/tcp: "Web UI"
+options:
+  timezone: "Europe/Bucharest"
+  debug: false
+  base_path: ""
+schema:
+  timezone: str
+  debug: bool
+  base_path: str?
+startup: services
