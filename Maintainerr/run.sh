@@ -8,8 +8,8 @@ export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
 export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
 export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
 
-# Use the HA OS Addon Config directory (mounted natively as /config in the container)
-export DATA_DIR="/config"
+# Use the Home Assistant share directory for persistent storage
+export DATA_DIR="/share/Maintainerr"
 
 echo "======================================================"
 echo " Starting Maintainerr Add-on for Home Assistant"
@@ -23,7 +23,7 @@ echo "======================================================"
 
 echo "Initializing persistent storage..."
 
-# Ensure the addon config directory exists
+# Ensure the shared directory exists
 mkdir -p "$DATA_DIR"
 
 # Bypass the app's native start.sh wrapper to prevent it from resetting our environment variables.
