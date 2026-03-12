@@ -1,48 +1,39 @@
-# Use the official Maintainerr image as the base
-FROM jorenn92/maintainerr:latest
+# -----------------------------------------------------------------------------
+# STAGE 1: Fetch the upstream image
+# -----------------------------------------------------------------------------
+FROM jorenn92/maintainerr:latest AS upstream
 
-# We need to run as root to install packages and set up the Home Assistant environment
+# -----------------------------------------------------------------------------
+# STAGE 2: The Clean Slate
+# We start from a fresh node:20-alpine image (the exact same base OS the app 
+# was compiled for). This strips away ALL upstream Docker metadata, meaning the 
+# "VOLUME /opt/data" instruction is permanently erased.
+# -----------------------------------------------------------------------------
+FROM node:20-alpine
+
 USER root
 
-# Install jq to parse options.json, plus bindfs and fuse to solve the Docker volume lock
-RUN if [ -f /etc/alpine-release ]; then \
-        apk add --no-cache jq bash tzdata ca-certificates fuse bindfs; \
-    else \
-        apt-get update && \
-        apt-get install -y jq bash tzdata ca-certificates fuse bindfs && \
-        rm -rf /var/lib/apt/lists/*; \
-    fi && \
-    echo "user_allow_other" >> /etc/fuse.conf
+# Install jq for reading Home Assistant options
+RUN apk add --no-cache jq bash tzdata ca-certificates
 
-# Configure the runtime environment
-# We set DATA_DIR to /config/data so the app natively aims for the persistent directory
-ENV DEBIAN_FRONTEND=noninteractive \
-    DATA_DIR=/config/data
+# Copy ONLY the fully compiled application from the upstream image.
+# Because the base OS perfectly matches, better-sqlite3 will NOT crash.
+COPY --from=upstream /opt/app /opt/app
 
-# Copy the custom run script to inject variables
+# Since the VOLUME metadata is gone, Docker will no longer lock this directory!
+# We can safely create a hard symlink routing /opt/data straight to Home 
+# Assistant's permanent /config bind mount (Host OS: addon_configs/maintainerr).
+RUN ln -s /config /opt/data
+
+# Match the necessary upstream environment variables
+ENV NODE_ENV=production \
+    DATA_DIR=/config
+
+# Copy our startup script
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
-# -----------------------------------------------------------------------------
-# THE ULTIMATE PERSISTENCE WORKAROUND
-# We wrap the user's run.sh with a script that uses bindfs (FUSE).
-# This mounts Home Assistant's permanent /config folder directly OVER the 
-# ephemeral /opt/data Docker volume. This replicates the exact behavior of 
-# a docker-compose volume bind mount, forcing all data to the Host OS!
-# -----------------------------------------------------------------------------
-RUN echo '#!/bin/bash' > /wrapper.sh && \
-    echo 'set -e' >> /wrapper.sh && \
-    echo 'echo "======================================================"' >> /wrapper.sh && \
-    echo 'echo " Executing Host OS Bind Mount Workaround..."' >> /wrapper.sh && \
-    echo 'mkdir -p /config/data' >> /wrapper.sh && \
-    echo 'chown -R node:node /config/data' >> /wrapper.sh && \
-    echo 'if command -v bindfs >/dev/null; then' >> /wrapper.sh && \
-    echo '    echo " Mounting /config/data over /opt/data using FUSE..."' >> /wrapper.sh && \
-    echo '    bindfs -o nonempty,allow_other /config/data /opt/data || echo "  Warning: FUSE mount skipped."' >> /wrapper.sh && \
-    echo 'fi' >> /wrapper.sh && \
-    echo 'echo "======================================================"' >> /wrapper.sh && \
-    echo 'exec /run.sh' >> /wrapper.sh && \
-    chmod +x /wrapper.sh
+WORKDIR /opt/app
 
-# Override the original entrypoint with our wrapper script
-CMD [ "/wrapper.sh" ]
+# Set our script as the entrypoint
+CMD [ "/run.sh" ]
