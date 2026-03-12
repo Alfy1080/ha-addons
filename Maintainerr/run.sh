@@ -3,13 +3,13 @@ set -e
 
 CONFIG_PATH=/data/options.json
 
-# Extract basic configuration from Home Assistant UI
-export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
-export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
-export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
+# Safely extract configuration from Home Assistant UI (fallback to defaults if missing)
+export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH 2>/dev/null || echo "UTC")
+export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH 2>/dev/null || echo "false")
+export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH 2>/dev/null || echo "")
 
-# We use the native Home Assistant Add-on /data directory for persistent storage
-export PERSISTENT_DIR="/data/maintainerr"
+# Define the physical bind mount directory provided by Home Assistant OS
+export DATA_DIR="/data/maintainerr"
 
 echo "======================================================"
 echo " Starting Maintainerr Add-on for Home Assistant"
@@ -18,41 +18,16 @@ echo " Debug mode: $DEBUG"
 if [ -n "$BASE_PATH" ]; then
     echo " Base Path: $BASE_PATH"
 fi
-echo " Persistent Directory: $PERSISTENT_DIR"
+echo " Persistent Host Directory: $DATA_DIR"
 echo "======================================================"
 
 echo "Initializing persistent storage..."
+# Ensure the Home Assistant persistent directory actually exists
+mkdir -p "$DATA_DIR"
 
-# Ensure the persistent directory exists
-mkdir -p "$PERSISTENT_DIR"
-
-# Provide common environment variables just in case the app respects them natively
-export DATA_DIR="$PERSISTENT_DIR"
-export DATADIR="$PERSISTENT_DIR"
-
-echo "Attempting to bind-mount persistent directory..."
-# Try to overlay the anonymous volume with our persistent directory.
-if mount --bind "$PERSISTENT_DIR" /opt/data 2>/dev/null; then
-    echo "Successfully bind-mounted persistent storage!"
-    cd /opt/app
-    exec node dist/main
-fi
-
-echo "Bind mount not permitted. Applying App Relocation workaround..."
-# Docker prevents removing the /opt/data VOLUME mount point, and unprivileged Add-ons cannot mount.
-# We relocate the app to /tmp so that relative path traversals (../../data) point to our symlink instead.
-APP_DIR="/tmp/maintainerr_app"
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR"
-
-echo "Copying application files to workspace..."
-cp -a /opt/app/. "$APP_DIR/"
-
-# The app looks for data in ../../data (relative to dist/main).
-# By putting the app in /tmp/maintainerr_app, ../../data resolves to /tmp/data.
-rm -rf /tmp/data 2>/dev/null || true
-ln -s "$PERSISTENT_DIR" /tmp/data
-
-cd "$APP_DIR"
-echo "Launching Maintainerr..."
+# Launch the app natively.
+# Because of the scratch build + symlink in the Dockerfile, 
+# EVERY write to /opt/data is now physically written to /data/maintainerr on the Host OS.
+cd /opt/app
+echo "Launching Maintainerr natively..."
 exec node dist/main
