@@ -2,7 +2,15 @@
 
 profile ha_addon_github_runner flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
-  
+
+  file,
   capability,
   network,
+  signal,
+  unix,
+  ipc,
+  ptrace,
+  mount,
+  remount,
+  umount,
 }

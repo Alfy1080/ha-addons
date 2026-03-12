@@ -2,8 +2,15 @@
 
 profile ha_addon_unpackerr flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
-  
-  # Allow network access and file system operations
-  network inet stream,
-  network inet6 stream,
+
+  file,
+  capability,
+  network,
+  signal,
+  unix,
+  ipc,
+  ptrace,
+  mount,
+  remount,
+  umount,
 }
