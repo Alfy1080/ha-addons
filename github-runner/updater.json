@@ -1,0 +1,5 @@
+{
+  "slug": "github-runner",
+  "repository": "actions/runner",
+  "source": "github"
+}

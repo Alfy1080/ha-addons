@@ -1,0 +1,8 @@
+#include <tunables/global>
+
+profile ha_addon_github_runner flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  
+  capability,
+  network,
+}
