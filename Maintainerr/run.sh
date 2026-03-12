@@ -8,18 +8,12 @@ export TZ=$(jq --raw-output '.timezone // "UTC"' $CONFIG_PATH)
 export DEBUG=$(jq --raw-output '.debug // "false"' $CONFIG_PATH)
 export BASE_PATH=$(jq --raw-output '.base_path // ""' $CONFIG_PATH)
 
-# Critical: Force Node to listen on all interfaces so HA can map the port
-export HOST=0.0.0.0
-
-# We use the Home Assistant share directory for persistent storage
-export PERSISTENT_DIR="/share/Maintainerr"
-export APP_DATA_DIR="/opt/data"
-export APP_DIR="/opt/app"
+# We use the native Home Assistant Add-on /data directory for persistent storage
+export PERSISTENT_DIR="/data/maintainerr"
 
 echo "======================================================"
 echo " Starting Maintainerr Add-on for Home Assistant"
 echo " Timezone set to: $TZ"
-echo " Host: $HOST"
 echo " Debug mode: $DEBUG"
 if [ -n "$BASE_PATH" ]; then
     echo " Base Path: $BASE_PATH"
@@ -29,33 +23,36 @@ echo "======================================================"
 
 echo "Initializing persistent storage..."
 
-# Ensure the shared directory exists on the host
+# Ensure the persistent directory exists
 mkdir -p "$PERSISTENT_DIR"
 
-# Copy initial data if persistent storage is empty
-if [ -z "$(ls -A "$PERSISTENT_DIR")" ] && [ -d "$APP_DATA_DIR" ]; then
-    echo "First run detected: Populating $PERSISTENT_DIR with default data..."
-    cp -a "$APP_DATA_DIR/." "$PERSISTENT_DIR/"
+# Provide common environment variables just in case the app respects them natively
+export DATA_DIR="$PERSISTENT_DIR"
+export DATADIR="$PERSISTENT_DIR"
+
+echo "Attempting to bind-mount persistent directory..."
+# Try to overlay the anonymous volume with our persistent directory.
+if mount --bind "$PERSISTENT_DIR" /opt/data 2>/dev/null; then
+    echo "Successfully bind-mounted persistent storage!"
+    cd /opt/app
+    exec node dist/main
 fi
 
-# Strategy 1: Bind Mount (Preferred)
-echo "Attempting to bind mount storage..."
-if mount --bind "$PERSISTENT_DIR" "$APP_DATA_DIR" 2>/dev/null; then
-    echo "Success: Storage mounted."
-else
-    # Strategy 2: Patch Application (Fallback if Volume is locked)
-    echo "Mount failed (Volume locked). Patching application to use $PERSISTENT_DIR directly..."
-    find "$APP_DIR" -type f -name "*.js" -exec grep -l "$APP_DATA_DIR" {} + | while read -r file; do
-        echo "Patching: $file"
-        sed -i "s|$APP_DATA_DIR|$PERSISTENT_DIR|g" "$file"
-    done
-    
-    # Ensure the original path is writable just in case
-    chmod 777 "$APP_DATA_DIR" || true
-fi
+echo "Bind mount not permitted. Applying App Relocation workaround..."
+# Docker prevents removing the /opt/data VOLUME mount point, and unprivileged Add-ons cannot mount.
+# We relocate the app to /tmp so that relative path traversals (../../data) point to our symlink instead.
+APP_DIR="/tmp/maintainerr_app"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR"
+
+echo "Copying application files to workspace..."
+cp -a /opt/app/. "$APP_DIR/"
+
+# The app looks for data in ../../data (relative to dist/main).
+# By putting the app in /tmp/maintainerr_app, ../../data resolves to /tmp/data.
+rm -rf /tmp/data 2>/dev/null || true
+ln -s "$PERSISTENT_DIR" /tmp/data
 
 cd "$APP_DIR"
-
-echo "Launching Maintainerr natively..."
-# The internal app will try to write to /opt/data, which is now safely symlinked to /share/Maintainerr
+echo "Launching Maintainerr..."
 exec node dist/main
