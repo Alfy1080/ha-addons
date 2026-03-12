@@ -1,6 +1,6 @@
 name: "Unpackerr"
 description: "Extracts downloads so Radarr, Sonarr, Lidarr or Readarr may import them."
-version: "0.15.2"
+version: "0.15.3"
 slug: "unpackerr"
 init: false
 arch:
