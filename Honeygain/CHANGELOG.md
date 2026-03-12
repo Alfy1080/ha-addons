@@ -2,5 +2,5 @@
 
 ## [Unreleased]
 
-## [0.0.1] - Initial Release
+## [1.0.2] - Initial Release
 - Initial release of Honeygain add-on.
