@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-03-13
+- Automatically updated to version 0.15.2
+
+
 ## [0.15.2] - 2026-03-12
 - Automatically updated to version 0.15.2
 
