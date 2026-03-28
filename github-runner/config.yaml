@@ -1,6 +1,6 @@
 name: "GitHub Actions Runner"
 description: "Self-hosted GitHub Actions runner for automated Home Assistant deployments."
-version: "2.333.0"
+version: "2.333.1"
 slug: "github_runner"
 init: false
 arch:
