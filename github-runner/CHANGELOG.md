@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.334.0] - 2026-04-22
+- Automatically updated to version 2.334.0
+
+
 ## [2.333.1] - 2026-03-28
 - Automatically updated to version 2.333.1
 
