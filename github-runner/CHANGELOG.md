@@ -1,7 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
 ## [2.334.0] - 2026-04-22
 - Automatically updated to version 2.334.0
 

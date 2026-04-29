@@ -52,12 +52,12 @@ def update_version(addon_name, addon_dir, old_ver, new_ver, config_path):
         with open(changelog_path, "r") as f:
             cl_content = f.read()
         
-        # Insert after the header or first line
-        if "## [Unreleased]" in cl_content:
-             cl_content = cl_content.replace("## [Unreleased]", f"## [Unreleased]\n{entry}")
+        # Insert after the header
+        if "# Changelog" in cl_content:
+             cl_content = cl_content.replace("# Changelog", f"# Changelog{entry}")
         else:
-             # Fallback: append
-             cl_content += entry
+             # Fallback: prepend
+             cl_content = f"# Changelog\n{entry}\n" + cl_content
              
         with open(changelog_path, "w") as f:
             f.write(cl_content)
