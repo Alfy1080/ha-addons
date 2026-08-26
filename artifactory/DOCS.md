@@ -18,9 +18,24 @@ Files uploaded to `/config/www/` are automatically served by Home Assistant at `
 
 ### Option: `read_paths`
 
-List of filesystem paths with read-only access (browse and download only).
+List of filesystem paths with read-only access (browse, preview, and download only).
 
 **Default:** `["/media", "/share"]`
+
+### Supported Path Locations
+
+Because the add-on has volume access to `/config`, `/media`, and `/share`, you can add any of the following to `write_paths` or `read_paths`:
+
+| Path | Purpose |
+|---|---|
+| `/config/www` | Static assets served by HA at `/local/` |
+| `/config/custom_components` | Custom integrations (HACS) |
+| `/config/blueprints` | Automation & script blueprints |
+| `/config/python_scripts` | Python scripts integration |
+| `/config/zigbee2mqtt` | Zigbee2MQTT configuration & devices |
+| `/share/zigbee2mqtt` | Zigbee2MQTT shared data (if using `/share`) |
+| `/media` | Local media storage |
+| `/share` | Shared add-on files |
 
 ## REST API
 
