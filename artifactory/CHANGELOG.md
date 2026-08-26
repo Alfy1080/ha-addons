@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.6 — 2026-08-26
+
+### Fixed
+- **Oversized Banner Icon**: Fixed remote server banner icon blowing up by enforcing strict SVG sizing and bounding container heights
+- **Modern Minimalist Icon Overhaul**: Replaced all icons across the entire application (brand, header, navigation, folders, file types, access badges, and action buttons) with clean, minimalist 1.5px/1.75px geometric line icons
+
 ## 1.1.5 — 2026-08-26
 
 ### Fixed
