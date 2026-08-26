@@ -39,7 +39,7 @@ Because the add-on has volume access to `/config`, `/media`, and `/share`, you c
 
 ## REST API
 
-The API is accessible via Home Assistant's Ingress proxy. When using the Heimdall MCP, call endpoints through `ha_manage_app`:
+The API is accessible via Home Assistant's Ingress proxy. When interacting via MCP or the Home Assistant API, call endpoints through your Home Assistant add-on proxy:
 
 ```
 ha_manage_app(slug="<prefix>_artifactory", path="/api/list?path=www")

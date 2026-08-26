@@ -157,25 +157,26 @@
     toastContainer: document.getElementById('toastContainer')
   };
 
-  // API Client Helper (handles Local and Remote Server Proxy)
+  // API Client Helper
   function getApiUrl(endpoint, params = {}) {
     const base = getBasePath();
-    const ep = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+    let url = '';
 
-    let urlPath = '';
     if (state.activeServerId === 'local') {
-      urlPath = `${base}/api/${ep}`;
+      url = `${base}/api/${endpoint}`;
     } else {
-      urlPath = `${base}/api/remote/${encodeURIComponent(state.activeServerId)}/${ep}`;
+      url = `${base}/api/remote/${encodeURIComponent(state.activeServerId)}/${endpoint}`;
     }
 
-    const url = new URL(urlPath, window.location.origin);
+    const queryParams = new URLSearchParams();
     Object.keys(params).forEach(k => {
       if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
-        url.searchParams.set(k, params[k]);
+        queryParams.append(k, params[k]);
       }
     });
-    return url.toString();
+
+    const queryString = queryParams.toString();
+    return queryString ? `${url}?${queryString}` : url;
   }
 
   async function apiRequest(endpoint, options = {}) {
@@ -271,7 +272,6 @@
     document.body.removeChild(textArea);
   }
 
-  // File Type & Icon Helpers
   function isTextFile(item) {
     if (!item || item.type === 'dir' || item.type === 'directory') return false;
     const ext = (item.ext || '').toLowerCase();
@@ -352,7 +352,7 @@
     `;
   }
 
-  // Load Folder Content with History support
+  // Load Folder Content
   async function loadDirectory(path = '', pushHistory = true) {
     path = (path || '').replace(/^\/+/, '').replace(/\/+$/, '');
     state.currentPath = path;
@@ -411,7 +411,6 @@
     }
   }
 
-  // Render Error State
   function renderErrorState(errorMessage) {
     if (!el.filesContainer) return;
     el.filesContainer.innerHTML = `
@@ -443,16 +442,12 @@
     loadDirectory('');
   };
 
-  // Load Server Info
   async function loadServerInfo() {
     try {
       const data = await apiRequest('info');
       state.serverInfo = data;
-      if (data.roots && data.roots.length > 0) {
-        const root = data.roots[0];
-        if (el.storageInfo && root.disk_free_formatted) {
-          el.storageInfo.textContent = `Storage: Free ${root.disk_free_formatted} / ${root.disk_total_formatted}`;
-        }
+      if (el.storageInfo && data.storage && data.storage.free_formatted) {
+        el.storageInfo.textContent = `Storage: Free ${data.storage.free_formatted} / ${data.storage.total_formatted}`;
       }
       if (el.hostBadge && data.server) {
         el.hostBadge.textContent = `${data.server.name || 'Artifactory'} v${data.server.version || '1.1.0'}`;
@@ -462,7 +457,6 @@
     }
   }
 
-  // Update Action Buttons
   function updateActionButtons() {
     const isRoot = !state.currentPath && state.activeServerId === 'local';
     const canWrite = !state.isReadOnly && !isRoot;
@@ -479,7 +473,6 @@
     }
   }
 
-  // Render Breadcrumbs
   function renderBreadcrumbs() {
     if (!el.breadcrumbs) return;
     el.breadcrumbs.innerHTML = '';
@@ -505,7 +498,6 @@
     }
   }
 
-  // Filter and Sort Items
   function getProcessedItems() {
     let list = [...state.items];
 
@@ -515,10 +507,10 @@
     }
 
     list.sort((a, b) => {
-      const isDirA = a.type === 'dir' || a.type === 'directory';
-      const isDirB = b.type === 'dir' || b.type === 'directory';
-      if (isDirA && !isDirB) return -1;
-      if (!isDirA && isDirB) return 1;
+      const isDir = (a.type === 'dir' || a.type === 'directory');
+      const isDirB = (b.type === 'dir' || b.type === 'directory');
+      if (isDir && !isDirB) return -1;
+      if (!isDir && isDirB) return 1;
 
       let valA = a[state.sortKey] || '';
       let valB = b[state.sortKey] || '';
@@ -533,7 +525,6 @@
     return list;
   }
 
-  // Render Items
   function renderItems(customMessage = null) {
     if (!el.filesContainer) return;
     const items = getProcessedItems();
@@ -566,7 +557,6 @@
     }
   }
 
-  // Render Grid View
   function renderGridView(items) {
     items.forEach(item => {
       const isDir = item.type === 'dir' || item.type === 'directory';
@@ -594,17 +584,15 @@
         ${badgeHtml}
         ${previewHtml}
         <div class="file-card-info">
-          <div class="file-card-name" title="${escapeHtml(item.fs_path || item.name)}">${escapeHtml(item.name)}</div>
-          ${item.fs_path && item.fs_path !== item.name && !state.currentPath ? `
-          <div style="font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.fs_path)}">${escapeHtml(item.fs_path)}</div>` : ''}
+          <div class="file-card-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
           <div class="file-card-meta">
             <span>${item.size_formatted || ''}</span>
             <span>${item.mtime_formatted ? item.mtime_formatted.split(' ')[0] : ''}</span>
           </div>
         </div>
         <div class="file-card-actions">
-          ${(item.ha_url || item.url) ? `
-          <button class="btn-icon small copy-ha-btn" title="Copy Direct Link">
+          ${item.ha_url || item.url ? `
+          <button class="btn-icon small copy-ha-btn" title="Copy Resource URL">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </button>` : ''}
           ${canEdit ? `
@@ -638,7 +626,7 @@
       if (copyHaBtn) copyHaBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const link = item.ha_url || item.url || getApiUrl('download', { path: item.path });
-        copyToClipboard(link, `Direct link copied: "${link}"`);
+        copyToClipboard(link, `URL copied: "${link}"`);
       });
 
       const editFileBtn = card.querySelector('.edit-file-btn');
@@ -669,7 +657,6 @@
     });
   }
 
-  // Render List View
   function renderListView(items) {
     const table = document.createElement('table');
     table.className = 'list-table';
@@ -701,8 +688,7 @@
           <div class="list-item-name-cell">
             <div class="list-item-icon ${isDir ? 'folder-icon' : ''}">${getFileIconSvg(item)}</div>
             <div style="min-width: 0;">
-              <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.fs_path || item.name)}">${escapeHtml(item.name)}</div>
-              ${item.fs_path && item.fs_path !== item.name ? `<div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.fs_path)}">${escapeHtml(item.fs_path)}</div>` : ''}
+              <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
             </div>
           </div>
         </td>
@@ -711,8 +697,8 @@
         <td>${item.mtime_formatted || '-'}</td>
         <td class="list-actions-cell">
           <div class="btn-group">
-            ${(item.ha_url || item.url) ? `
-            <button class="btn-icon small copy-ha-btn" title="Copy Direct Link">
+            ${item.ha_url || item.url ? `
+            <button class="btn-icon small copy-ha-btn" title="Copy Resource URL">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
             </button>` : ''}
             ${canEdit ? `
@@ -747,7 +733,7 @@
       if (copyHaBtn) copyHaBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const link = item.ha_url || item.url || getApiUrl('download', { path: item.path });
-        copyToClipboard(link, `Direct link copied: "${link}"`);
+        copyToClipboard(link, `URL copied: "${link}"`);
       });
 
       const editFileBtn = tr.querySelector('.edit-file-btn');
@@ -793,7 +779,6 @@
     el.filesContainer.appendChild(table);
   }
 
-  // Trigger Download
   function triggerDownload(item) {
     const downloadUrl = getApiUrl('download', { path: item.path });
     const a = document.createElement('a');
@@ -804,7 +789,6 @@
     document.body.removeChild(a);
   }
 
-  // Code Editor Management
   function enterEditorMode(initialText) {
     state.editorMode = true;
     state.editorCurrentText = initialText;
@@ -946,7 +930,6 @@
     }
   }
 
-  // Preview Modal
   async function openPreview(item, autoEdit = false) {
     state.previewItem = item;
     state.editorMode = false;
@@ -954,13 +937,13 @@
     state.editorCurrentText = '';
 
     el.previewTitle.textContent = item.name;
-    if (el.previewPath) el.previewPath.textContent = `Path: ${item.fs_path || item.path}`;
+    if (el.previewPath) el.previewPath.textContent = `Path: /${item.path}`;
     el.previewSize.textContent = `Size: ${item.size_formatted || '0 B'}`;
     el.previewMtime.textContent = `Date: ${item.mtime_formatted || '-'}`;
     el.previewMime.textContent = `MIME: ${item.mime || 'unknown'}`;
 
-    const haUrl = item.ha_url || item.url || getApiUrl('download', { path: item.path });
-    el.previewDirectLinkInput.value = haUrl;
+    const directUrl = item.ha_url || item.url || getApiUrl('download', { path: item.path });
+    el.previewDirectLinkInput.value = directUrl;
 
     const previewUrl = getApiUrl('download', { path: item.path, inline: 'true' });
     const ext = (item.ext || '').toLowerCase();
@@ -1026,17 +1009,11 @@
     state.editorMode = false;
   }
 
-  // Upload Management
   async function handleFilesUpload(files) {
     if (!files || files.length === 0) return;
-    if ((!state.currentPath && state.activeServerId === 'local') || state.isReadOnly) {
-      showToast('Cannot upload to this directory', 'error');
-      return;
-    }
 
     const formData = new FormData();
     formData.append('path', state.currentPath);
-    formData.append('overwrite', 'true');
 
     for (let i = 0; i < files.length; i++) {
       formData.append('files', files[i]);
@@ -1210,7 +1187,9 @@
         card.querySelector('.delete-btn').addEventListener('click', async () => {
           if (!confirm(`Remove server "${srv.display_name}"?`)) return;
           try {
-            const delRes = await fetch(`${base}/api/federation/servers/${srv.id}`, { method: 'DELETE' });
+            const delRes = await fetch(`${base}/api/federation/servers/${encodeURIComponent(srv.id)}`, {
+              method: 'DELETE'
+            });
             const delData = await delRes.json();
             if (delData.success) {
               showToast('Server removed', 'success');
@@ -1274,7 +1253,9 @@
         card.querySelector('.revoke-btn').addEventListener('click', async () => {
           if (!confirm(`Revoke key for "${k.name}"? Remote clients using this key will immediately lose access.`)) return;
           try {
-            const delRes = await fetch(`${base}/api/federation/keys/${k.id}`, { method: 'DELETE' });
+            const delRes = await fetch(`${base}/api/federation/keys/${encodeURIComponent(k.id)}`, {
+              method: 'DELETE'
+            });
             const delData = await delRes.json();
             if (delData.success) {
               showToast('Key revoked', 'success');
@@ -1292,9 +1273,8 @@
     }
   }
 
-  // Modals Management
   function openNewFolderModal() {
-    if ((!state.currentPath && state.activeServerId === 'local') || state.isReadOnly) return;
+    if (state.isReadOnly) return;
     el.newFolderNameInput.value = '';
     el.newFolderModal.style.display = 'flex';
     el.newFolderNameInput.focus();
@@ -1327,9 +1307,7 @@
     state.activeDeletePath = null;
   }
 
-  // Event Listeners Registration
   function setupEventListeners() {
-    // Server Selector Dropdown
     if (el.serverSelect) {
       el.serverSelect.addEventListener('change', (e) => {
         setActiveServer(e.target.value);
@@ -1342,11 +1320,9 @@
       });
     }
 
-    // Servers Modal Open/Close
     if (el.serversManagerBtn) el.serversManagerBtn.addEventListener('click', openServersModal);
     if (el.closeServersModalBtn) el.closeServersModalBtn.addEventListener('click', closeServersModal);
 
-    // Test Server Button
     if (el.testServerBtn) {
       el.testServerBtn.addEventListener('click', async () => {
         const url = el.serverUrlInput.value.trim();
@@ -1384,7 +1360,6 @@
       });
     }
 
-    // Add Server Form
     if (el.addServerForm) {
       el.addServerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1437,11 +1412,9 @@
       });
     }
 
-    // Keys Modal Open/Close
     if (el.keysManagerBtn) el.keysManagerBtn.addEventListener('click', openKeysModal);
     if (el.closeKeysModalBtn) el.closeKeysModalBtn.addEventListener('click', closeKeysModal);
 
-    // Generate Key Form
     if (el.generateKeyForm) {
       el.generateKeyForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1479,7 +1452,6 @@
       });
     }
 
-    // Navigation Up Button
     if (el.navUpBtn) {
       el.navUpBtn.addEventListener('click', () => {
         if (state.breadcrumbs.length > 1) {
@@ -1489,7 +1461,6 @@
       });
     }
 
-    // Copy Current Path
     if (el.copyCurrentPathBtn) {
       el.copyCurrentPathBtn.addEventListener('click', () => {
         const fullUrl = window.location.href;
@@ -1497,7 +1468,6 @@
       });
     }
 
-    // Search Input
     if (el.searchInput) {
       el.searchInput.addEventListener('input', (e) => {
         state.searchQuery = e.target.value;
@@ -1517,7 +1487,6 @@
       });
     }
 
-    // Refresh Button
     if (el.refreshBtn) {
       el.refreshBtn.addEventListener('click', () => {
         loadDirectory(state.currentPath);
@@ -1525,7 +1494,6 @@
       });
     }
 
-    // View Toggle
     if (el.gridViewBtn && el.listViewBtn) {
       el.gridViewBtn.addEventListener('click', () => {
         state.viewMode = 'grid';
@@ -1544,7 +1512,6 @@
       });
     }
 
-    // Theme Toggle
     if (el.themeToggleBtn) {
       el.themeToggleBtn.addEventListener('click', () => {
         state.theme = state.theme === 'dark' ? 'light' : 'dark';
@@ -1557,10 +1524,8 @@
       });
     }
 
-    // Upload Button & File Input
     if (el.uploadBtn && el.fileInput) {
       el.uploadBtn.addEventListener('click', () => {
-        if ((!state.currentPath && state.activeServerId === 'local') || state.isReadOnly) return;
         el.fileInput.click();
       });
 
@@ -1570,10 +1535,9 @@
       });
     }
 
-    // Drag & Drop
     window.addEventListener('dragover', (e) => {
       e.preventDefault();
-      if ((state.currentPath || state.activeServerId !== 'local') && !state.isReadOnly && el.dropOverlay) {
+      if (el.dropOverlay) {
         el.dropOverlay.classList.add('active');
       }
     });
@@ -1592,14 +1556,12 @@
       }
     });
 
-    // Close Upload Progress
     if (el.closeUploadProgressBtn) {
       el.closeUploadProgressBtn.addEventListener('click', () => {
         el.uploadProgressContainer.style.display = 'none';
       });
     }
 
-    // New Folder Modal
     if (el.newFolderBtn) el.newFolderBtn.addEventListener('click', openNewFolderModal);
     if (el.cancelNewFolderBtn) el.cancelNewFolderBtn.addEventListener('click', closeNewFolderModal);
     if (el.closeNewFolderModalBtn) el.closeNewFolderModalBtn.addEventListener('click', closeNewFolderModal);
@@ -1623,7 +1585,6 @@
       });
     }
 
-    // Rename Modal
     if (el.cancelRenameBtn) el.cancelRenameBtn.addEventListener('click', closeRenameModal);
     if (el.closeRenameModalBtn) el.closeRenameModalBtn.addEventListener('click', closeRenameModal);
     if (el.renameForm) {
@@ -1646,7 +1607,6 @@
       });
     }
 
-    // Delete Modal
     if (el.cancelDeleteBtn) el.cancelDeleteBtn.addEventListener('click', closeDeleteModal);
     if (el.closeDeleteModalBtn) el.closeDeleteModalBtn.addEventListener('click', closeDeleteModal);
     if (el.confirmDeleteBtn) {
@@ -1667,7 +1627,6 @@
       });
     }
 
-    // Preview & Code Editor Modal Buttons
     if (el.closePreviewModalBtn) el.closePreviewModalBtn.addEventListener('click', closePreview);
     if (el.previewDownloadBtn) {
       el.previewDownloadBtn.addEventListener('click', () => {
@@ -1678,13 +1637,13 @@
       el.previewCopyUrlBtn.addEventListener('click', () => {
         if (state.previewItem) {
           const url = state.previewItem.ha_url || state.previewItem.url || getApiUrl('download', { path: state.previewItem.path });
-          copyToClipboard(url, 'Direct link copied to clipboard');
+          copyToClipboard(url, 'URL copied to clipboard');
         }
       });
     }
     if (el.previewCopyInputBtn) {
       el.previewCopyInputBtn.addEventListener('click', () => {
-        copyToClipboard(el.previewDirectLinkInput.value, 'Direct link copied');
+        copyToClipboard(el.previewDirectLinkInput.value, 'URL copied');
       });
     }
 
@@ -1704,7 +1663,6 @@
       });
     }
 
-    // Browser Back / Forward History Navigation
     window.addEventListener('popstate', (e) => {
       const parsed = e.state ? { serverId: e.state.serverId || 'local', path: e.state.path || '' } : parseHash();
       if (parsed.serverId !== state.activeServerId) {
@@ -1724,7 +1682,6 @@
       loadDirectory(parsed.path, false);
     });
 
-    // Global Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         if (!state.editorMode) {
@@ -1753,7 +1710,6 @@
     });
   }
 
-  // Initialization
   async function init() {
     document.body.setAttribute('data-theme', state.theme);
     if (el.themeIconSun && el.themeIconMoon) {
