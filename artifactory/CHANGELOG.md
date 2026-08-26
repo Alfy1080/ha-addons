@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.6 — 2026-08-26
+
+### Added
+- **In-Browser Text File Editor**: Integrated full-featured code editor to edit `css`, `json`, `yaml`, `yml`, `pem`, `key`, `crt`, `js`, `ts`, `py`, `sh`, `txt`, `md`, `html`, `xml`, `conf`, `env`, etc., directly in the browser with line numbers gutter, tab indentation (2 spaces), word wrap toggle, and `Ctrl+S` / `Cmd+S` keyboard shortcuts.
+- **REST API Endpoint**: Added `POST /api/save` for saving text files directly.
+- **Transparent Backgroundless Icon & Logo**: Updated add-on icon and logo with a 3D glowing isometric digital artifact vault cube on pure transparent background.
+
 ## 1.0.5 — 2026-08-26
 
 ### Added

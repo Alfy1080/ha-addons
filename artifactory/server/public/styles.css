@@ -1009,6 +1009,100 @@ body {
   word-break: break-all;
 }
 
+/* Code Editor Styling */
+.code-editor-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 380px;
+  max-height: 58vh;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+}
+
+.code-editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.code-editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.wrap-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.editor-shortcut-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid var(--border-color);
+}
+
+.code-editor-wrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background-color: var(--bg-primary);
+}
+
+.code-editor-gutter {
+  width: 48px;
+  padding: 0.75rem 0.5rem 0.75rem 0;
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.825rem;
+  line-height: 1.45rem;
+  color: var(--text-muted);
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  user-select: none;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.code-editor-textarea {
+  flex: 1;
+  padding: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.825rem;
+  line-height: 1.45rem;
+  color: var(--text-primary);
+  background-color: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  white-space: pre;
+  word-wrap: normal;
+  overflow: auto;
+  tab-size: 2;
+}
+
+.code-editor-textarea.wrap-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .preview-media-pdf {
   width: 100%;
   height: 50vh;

@@ -4,7 +4,8 @@
  *
  * Zero external dependencies, pure vanilla JS.
  * Ingress-compatible with dynamic path resolution.
- * Supports Browser History (Back/Forward), Access Badges (Read/Write), and Graceful Error Handling.
+ * Supports Browser History (Back/Forward), Access Badges (Read/Write),
+ * In-Browser Text File Editor, and Graceful Error Handling.
  */
 
 (function () {
@@ -48,7 +49,10 @@
     previewItem: null,
     activeDeletePath: null,
     activeRenamePath: null,
-    isReadOnly: false
+    isReadOnly: false,
+    editorMode: false,
+    editorOriginalContent: '',
+    editorCurrentText: ''
   };
 
   // DOM Elements
@@ -82,7 +86,7 @@
     itemsSummary: document.getElementById('itemsSummary'),
     storageInfo: document.getElementById('storageInfo'),
     uploadLimitInfo: document.getElementById('uploadLimitInfo'),
-    // Preview Modal
+    // Preview & Editor Modal
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewBody: document.getElementById('previewBody'),
@@ -94,6 +98,9 @@
     previewCopyUrlBtn: document.getElementById('previewCopyUrlBtn'),
     previewCopyInputBtn: document.getElementById('previewCopyInputBtn'),
     previewDownloadBtn: document.getElementById('previewDownloadBtn'),
+    previewEditBtn: document.getElementById('previewEditBtn'),
+    previewEditBtnText: document.getElementById('previewEditBtnText'),
+    previewSaveBtn: document.getElementById('previewSaveBtn'),
     closePreviewModalBtn: document.getElementById('closePreviewModalBtn'),
     // New Folder Modal
     newFolderModal: document.getElementById('newFolderModal'),
@@ -223,7 +230,20 @@
     document.body.removeChild(textArea);
   }
 
-  // Icons & Badges Helpers
+  // File Type & Icon Helpers
+  function isTextFile(item) {
+    if (!item || item.type === 'dir' || item.type === 'directory') return false;
+    const ext = (item.ext || '').toLowerCase();
+    const mime = (item.mime || '').toLowerCase();
+    const textExts = [
+      'txt', 'md', 'json', 'yaml', 'yml', 'css', 'scss', 'js', 'ts', 'jsx', 'tsx',
+      'html', 'htm', 'py', 'sh', 'bash', 'pem', 'key', 'crt', 'cert', 'csr', 'pub',
+      'xml', 'svg', 'conf', 'ini', 'cfg', 'env', 'sql', 'csv', 'tsv', 'log', 'toml',
+      'dockerfile', 'gitignore'
+    ];
+    return textExts.includes(ext) || mime.startsWith('text/') || mime === 'application/json' || mime === 'application/yaml' || mime === 'application/javascript' || mime === 'image/svg+xml';
+  }
+
   function getFileIconSvg(item) {
     const isDir = item.type === 'dir' || item.type === 'directory';
     if (isDir) {
@@ -242,7 +262,7 @@
     if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext) || mime.startsWith('audio/')) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
     }
-    if (['js', 'ts', 'php', 'py', 'sh', 'css', 'html', 'json', 'yaml', 'yml', 'sql', 'xml'].includes(ext)) {
+    if (['js', 'ts', 'php', 'py', 'sh', 'css', 'html', 'json', 'yaml', 'yml', 'sql', 'xml', 'pem'].includes(ext)) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
     }
     if (['zip', 'tar', 'gz', 'bz2', '7z', 'rar'].includes(ext) || mime.includes('zip') || mime.includes('compressed')) {
@@ -514,7 +534,7 @@
       const isDir = item.type === 'dir' || item.type === 'directory';
       const card = document.createElement('div');
       card.className = 'file-card';
-      card.title = item.name;
+      card.title = item.fs_path || item.name;
 
       const isImage = !isDir && (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(item.ext) || (item.mime && item.mime.startsWith('image/')));
       let previewHtml = '';
@@ -528,9 +548,8 @@
       }
 
       const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+      const canEdit = !isDir && isTextFile(item) && canWrite;
       const badgeHtml = getAccessBadgeHtml(item);
-
-      card.title = item.fs_path || item.name;
 
       card.innerHTML = `
         ${badgeHtml}
@@ -548,6 +567,10 @@
           ${item.ha_url ? `
           <button class="btn-icon small copy-ha-btn" title="Copy HA URL (${item.ha_url})">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>` : ''}
+          ${canEdit ? `
+          <button class="btn-icon small edit-file-btn" title="Edit in browser">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
           </button>` : ''}
           ${!isDir ? `
           <button class="btn-icon small download-btn" title="Download">
@@ -578,6 +601,12 @@
       if (copyHaBtn) copyHaBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         copyToClipboard(item.ha_url, `HA URL copied: "${item.ha_url}"`);
+      });
+
+      const editFileBtn = card.querySelector('.edit-file-btn');
+      if (editFileBtn) editFileBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPreview(item, true);
       });
 
       const downloadBtn = card.querySelector('.download-btn');
@@ -625,6 +654,7 @@
       const isDir = item.type === 'dir' || item.type === 'directory';
       const tr = document.createElement('tr');
       const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+      const canEdit = !isDir && isTextFile(item) && canWrite;
       const accessPill = getAccessPillHtml(item);
 
       tr.innerHTML = `
@@ -645,6 +675,10 @@
             ${item.ha_url ? `
             <button class="btn-icon small copy-ha-btn" title="Copy HA URL (${item.ha_url})">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>` : ''}
+            ${canEdit ? `
+            <button class="btn-icon small edit-file-btn" title="Edit in browser">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
             </button>` : ''}
             ${!isDir ? `
             <button class="btn-icon small download-btn" title="Download">
@@ -674,6 +708,12 @@
       if (copyHaBtn) copyHaBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         copyToClipboard(item.ha_url, `HA URL copied: "${item.ha_url}"`);
+      });
+
+      const editFileBtn = tr.querySelector('.edit-file-btn');
+      if (editFileBtn) editFileBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPreview(item, true);
       });
 
       const downloadBtn = tr.querySelector('.download-btn');
@@ -725,9 +765,156 @@
     document.body.removeChild(a);
   }
 
+  // Code Editor Management
+  function enterEditorMode(initialText) {
+    state.editorMode = true;
+    state.editorCurrentText = initialText;
+    if (el.previewEditBtnText) el.previewEditBtnText.textContent = 'View Preview';
+    if (el.previewSaveBtn) el.previewSaveBtn.style.display = 'inline-flex';
+
+    el.previewBody.innerHTML = `
+      <div class="code-editor-container">
+        <div class="code-editor-toolbar">
+          <span class="code-editor-status" id="editorStatus">Line 1, Col 1</span>
+          <div class="code-editor-tools">
+            <label class="wrap-label"><input type="checkbox" id="editorWrapToggle"> Wrap Lines</label>
+            <span class="editor-shortcut-hint">Ctrl+S / ⌘S to save</span>
+          </div>
+        </div>
+        <div class="code-editor-wrapper">
+          <div class="code-editor-gutter" id="editorGutter">1</div>
+          <textarea id="codeEditorTextarea" class="code-editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </div>
+      </div>
+    `;
+
+    const textarea = document.getElementById('codeEditorTextarea');
+    const gutter = document.getElementById('editorGutter');
+    const status = document.getElementById('editorStatus');
+    const wrapToggle = document.getElementById('editorWrapToggle');
+
+    if (!textarea) return;
+
+    textarea.value = initialText;
+
+    function updateGutter() {
+      const lineCount = (textarea.value.match(/\n/g) || []).length + 1;
+      const lines = [];
+      for (let i = 1; i <= lineCount; i++) lines.push(i);
+      gutter.textContent = lines.join('\n');
+    }
+
+    function updateCursorStatus() {
+      const selStart = textarea.selectionStart;
+      const val = textarea.value.slice(0, selStart);
+      const line = (val.match(/\n/g) || []).length + 1;
+      const col = selStart - val.lastIndexOf('\n');
+      status.textContent = `Line ${line}, Col ${col}`;
+    }
+
+    updateGutter();
+    updateCursorStatus();
+
+    textarea.addEventListener('input', () => {
+      updateGutter();
+      updateCursorStatus();
+      state.editorCurrentText = textarea.value;
+    });
+
+    textarea.addEventListener('click', updateCursorStatus);
+    textarea.addEventListener('keyup', updateCursorStatus);
+
+    textarea.addEventListener('scroll', () => {
+      gutter.scrollTop = textarea.scrollTop;
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + 2;
+        updateGutter();
+        updateCursorStatus();
+        state.editorCurrentText = textarea.value;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveEditorContent();
+      }
+    });
+
+    if (wrapToggle) {
+      wrapToggle.addEventListener('change', () => {
+        textarea.classList.toggle('wrap-text', wrapToggle.checked);
+      });
+    }
+
+    textarea.focus();
+  }
+
+  function exitEditorModeToPreview() {
+    state.editorMode = false;
+    if (el.previewEditBtnText) el.previewEditBtnText.textContent = 'Edit';
+    if (el.previewSaveBtn) el.previewSaveBtn.style.display = 'none';
+    el.previewBody.innerHTML = `<pre class="preview-media-text">${escapeHtml(state.editorCurrentText)}</pre>`;
+  }
+
+  async function saveEditorContent() {
+    if (!state.previewItem) return;
+    const textarea = document.getElementById('codeEditorTextarea');
+    const content = textarea ? textarea.value : state.editorCurrentText;
+
+    if (el.previewSaveBtn) {
+      el.previewSaveBtn.disabled = true;
+      el.previewSaveBtn.innerHTML = `<span>Saving...</span>`;
+    }
+
+    try {
+      const res = await apiRequest('save', {
+        method: 'POST',
+        body: { path: state.previewItem.path, content }
+      });
+
+      showToast('File saved successfully!', 'success');
+      state.editorOriginalContent = content;
+      state.editorCurrentText = content;
+
+      if (res.file) {
+        state.previewItem.size = res.file.size;
+        state.previewItem.size_formatted = res.file.size_formatted;
+        state.previewItem.mtime_formatted = res.file.mtime_formatted;
+        if (el.previewSize) el.previewSize.textContent = `Size: ${res.file.size_formatted}`;
+        if (el.previewMtime) el.previewMtime.textContent = `Date: ${res.file.mtime_formatted}`;
+      }
+
+      // Refresh directory list quietly in background
+      loadDirectory(state.currentPath, false);
+    } catch (err) {
+      showToast(`Failed to save file: ${err.message}`, 'error');
+    } finally {
+      if (el.previewSaveBtn) {
+        el.previewSaveBtn.disabled = false;
+        el.previewSaveBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+          <span>Save</span>
+        `;
+      }
+    }
+  }
+
   // Preview Modal
-  async function openPreview(item) {
+  async function openPreview(item, autoEdit = false) {
     state.previewItem = item;
+    state.editorMode = false;
+    state.editorOriginalContent = '';
+    state.editorCurrentText = '';
+
     el.previewTitle.textContent = item.name;
     if (el.previewPath) el.previewPath.textContent = `Path: ${item.fs_path || item.path}`;
     el.previewSize.textContent = `Size: ${item.size_formatted || '0 B'}`;
@@ -740,11 +927,27 @@
     const previewUrl = getApiUrl('download', { path: item.path, inline: 'true' });
     const ext = (item.ext || '').toLowerCase();
     const mime = item.mime || '';
+    const isText = isTextFile(item);
+    const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+
+    // Configure Edit & Save buttons
+    if (isText) {
+      if (el.previewEditBtn) {
+        el.previewEditBtn.style.display = 'inline-flex';
+        el.previewEditBtn.disabled = !canWrite;
+        el.previewEditBtn.title = canWrite ? 'Edit file in browser' : 'File is read-only';
+      }
+      if (el.previewEditBtnText) el.previewEditBtnText.textContent = 'Edit';
+      if (el.previewSaveBtn) el.previewSaveBtn.style.display = 'none';
+    } else {
+      if (el.previewEditBtn) el.previewEditBtn.style.display = 'none';
+      if (el.previewSaveBtn) el.previewSaveBtn.style.display = 'none';
+    }
 
     el.previewBody.innerHTML = '<div class="spinner"></div>';
     el.previewModal.style.display = 'flex';
 
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext) || mime.startsWith('image/')) {
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'ico', 'bmp'].includes(ext) || (mime.startsWith('image/') && ext !== 'svg')) {
       el.previewBody.innerHTML = `<img src="${previewUrl}" class="preview-media-img" alt="${escapeHtml(item.name)}">`;
     } else if (['mp4', 'webm', 'mov'].includes(ext) || mime.startsWith('video/')) {
       el.previewBody.innerHTML = `<video src="${previewUrl}" controls autoplay class="preview-media-video"></video>`;
@@ -752,11 +955,18 @@
       el.previewBody.innerHTML = `<audio src="${previewUrl}" controls autoplay class="preview-media-audio"></audio>`;
     } else if (ext === 'pdf' || mime === 'application/pdf') {
       el.previewBody.innerHTML = `<iframe src="${previewUrl}" class="preview-media-pdf"></iframe>`;
-    } else if (['txt', 'md', 'json', 'yaml', 'yml', 'js', 'ts', 'html', 'css', 'py', 'sh', 'csv', 'xml', 'log'].includes(ext) || mime.startsWith('text/')) {
+    } else if (isText) {
       try {
         const response = await fetch(previewUrl);
         const text = await response.text();
-        el.previewBody.innerHTML = `<pre class="preview-media-text">${escapeHtml(text)}</pre>`;
+        state.editorOriginalContent = text;
+        state.editorCurrentText = text;
+
+        if (autoEdit && canWrite) {
+          enterEditorMode(text);
+        } else {
+          el.previewBody.innerHTML = `<pre class="preview-media-text">${escapeHtml(text)}</pre>`;
+        }
       } catch (err) {
         el.previewBody.innerHTML = '<p class="warning-text">Failed to load text preview</p>';
       }
@@ -775,6 +985,7 @@
     el.previewModal.style.display = 'none';
     el.previewBody.innerHTML = '';
     state.previewItem = null;
+    state.editorMode = false;
   }
 
   // Upload Management
@@ -1076,7 +1287,7 @@
       });
     }
 
-    // Preview Modal Buttons
+    // Preview & Code Editor Modal Buttons
     if (el.closePreviewModalBtn) el.closePreviewModalBtn.addEventListener('click', closePreview);
     if (el.previewDownloadBtn) {
       el.previewDownloadBtn.addEventListener('click', () => {
@@ -1097,6 +1308,22 @@
       });
     }
 
+    if (el.previewEditBtn) {
+      el.previewEditBtn.addEventListener('click', () => {
+        if (state.editorMode) {
+          exitEditorModeToPreview();
+        } else {
+          enterEditorMode(state.editorCurrentText || state.editorOriginalContent);
+        }
+      });
+    }
+
+    if (el.previewSaveBtn) {
+      el.previewSaveBtn.addEventListener('click', () => {
+        saveEditorContent();
+      });
+    }
+
     // Browser Back / Forward History Navigation
     window.addEventListener('popstate', (e) => {
       const path = (e.state && e.state.path !== undefined)
@@ -1112,13 +1339,15 @@
       }
     });
 
-    // Keyboard Shortcuts
+    // Global Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        if (el.searchInput) {
-          el.searchInput.focus();
-          el.searchInput.select();
+        if (!state.editorMode) {
+          e.preventDefault();
+          if (el.searchInput) {
+            el.searchInput.focus();
+            el.searchInput.select();
+          }
         }
       }
       if (e.key === 'Escape') {
@@ -1127,7 +1356,7 @@
         closeRenameModal();
         closeDeleteModal();
       }
-      if (e.key === 'Backspace' && document.activeElement.tagName !== 'INPUT') {
+      if (e.key === 'Backspace' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
         if (state.breadcrumbs.length > 1) {
           e.preventDefault();
           const parentBc = state.breadcrumbs[state.breadcrumbs.length - 2];

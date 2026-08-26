@@ -271,7 +271,7 @@ app.get('/api/info', (req, res) => {
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.5',
+      version: '1.0.6',
       platform: 'Home Assistant Add-on',
       node_version: process.version,
     },
@@ -408,6 +408,52 @@ app.get('/api/list', (req, res) => {
     total_items: items.length,
     items,
   });
+});
+
+// ---------------------------------------------------------------------------
+// API: POST /api/save (Direct text file save/edit)
+// ---------------------------------------------------------------------------
+app.post('/api/save', (req, res) => {
+  const { path: filePath, content } = req.body || {};
+  if (!filePath || content === undefined || content === null) {
+    return res.status(400).json({ success: false, error: 'path and content are required.' });
+  }
+
+  const resolved = resolvePath(filePath, false);
+  if (!resolved) {
+    return res.status(400).json({ success: false, error: 'Invalid destination path.' });
+  }
+  if (!resolved.root.writable) {
+    return res.status(403).json({ success: false, error: `Path "${resolved.root.name}" is read-only.` });
+  }
+
+  // Ensure parent directory exists
+  const parentDir = path.dirname(resolved.absolute);
+  if (!fs.existsSync(parentDir)) {
+    fs.mkdirSync(parentDir, { recursive: true });
+  }
+
+  try {
+    fs.writeFileSync(resolved.absolute, content, 'utf8');
+    const stat = fs.statSync(resolved.absolute);
+    const haUrl = getHaUrl(resolved.root, resolved.rootRelative);
+
+    return res.json({
+      success: true,
+      message: 'File saved successfully.',
+      file: {
+        name: path.basename(resolved.absolute),
+        path: resolved.relative,
+        fs_path: resolved.absolute,
+        size: stat.size,
+        size_formatted: formatBytes(stat.size),
+        mtime_formatted: stat.mtime.toISOString().replace('T', ' ').slice(0, 19),
+        ha_url: haUrl,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: `Failed to save file: ${err.message}` });
+  }
 });
 
 // ---------------------------------------------------------------------------
