@@ -237,7 +237,7 @@ app.get('/api/info', (req, res) => {
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.1',
+      version: '1.0.2',
       platform: 'Home Assistant Add-on',
       node_version: process.version,
     },

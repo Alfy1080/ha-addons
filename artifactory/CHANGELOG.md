@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2 — 2026-08-26
+
+### Fixed
+- Replaced frontend with standalone, zero-dependency File Explorer UI (matching Yggdrasil Artifactory)
+- Removed external Tailwind and Google Fonts CDN dependencies for 100% offline & Ingress iframe reliability
+- Added inline SVG icons, theme toggle (dark/light), grid & list view modes
+- Enhanced image thumbnail rendering and responsive layout
+
 ## 1.0.1 — 2026-08-26
 
 ### Fixed
