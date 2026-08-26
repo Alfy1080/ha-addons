@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Artifactory — File & Asset Manager</title>
-  <link rel="stylesheet" href="style.css?v=1.1.1">
+  <link rel="stylesheet" href="style.css?v=1.1.4">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'><path d='M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z'/></svg>">
 </head>
 <body data-theme="dark">
@@ -19,7 +19,7 @@
         </div>
         <div class="brand-text">
           <h1>Artifactory</h1>
-          <span class="host-badge" id="hostBadge">Artifactory v1.1.1</span>
+          <span class="host-badge" id="hostBadge">Artifactory v1.1.4</span>
         </div>
       </div>
 
@@ -61,6 +61,16 @@
           <span>Upload</span>
         </button>
         <input type="file" id="fileInput" multiple style="display:none;">
+
+        <button id="newFileBtn" class="btn btn-secondary" title="Create New File">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <line x1="9" y1="15" x2="15" y2="15"></line>
+          </svg>
+          <span>New File</span>
+        </button>
 
         <button id="newFolderBtn" class="btn btn-secondary" title="New Folder">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -391,6 +401,37 @@
     </div>
   </div>
 
+  <!-- Modal: Create New File -->
+  <div id="newFileModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <line x1="9" y1="15" x2="15" y2="15"></line>
+          </svg>
+          <h3>Create New File</h3>
+        </div>
+        <button id="closeNewFileModalBtn" class="btn-icon small modal-close">&times;</button>
+      </div>
+      <form id="newFileForm">
+        <div class="modal-body">
+          <label for="newFileNameInput">File Name (with extension)</label>
+          <input type="text" id="newFileNameInput" placeholder="e.g. notes.txt, config.yaml, style.css, script.py" required autofocus>
+          <p class="form-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem;">
+            Created text files will automatically open in the in-browser text editor.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="cancelNewFileBtn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="submitNewFileBtn" class="btn btn-primary">Create & Edit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: New Folder -->
   <div id="newFolderModal" class="modal-overlay" style="display:none;">
     <div class="modal-card">
@@ -452,6 +493,6 @@
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="app.js?v=1.1.1"></script>
+  <script src="app.js?v=1.1.4"></script>
 </body>
 </html>

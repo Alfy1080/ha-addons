@@ -17,7 +17,7 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8099', 10);
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 
 // ---------------------------------------------------------------------------
 // Configuration: parse write/read paths from options.json or environment
@@ -799,11 +799,12 @@ app.post('/api/rename', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// API: GET /api/download
+// API: GET /api/download & GET /api/preview
 // ---------------------------------------------------------------------------
-app.get('/api/download', (req, res) => {
+app.get(['/api/download', '/api/preview'], (req, res) => {
   const reqPath = (req.query.path || '').toString();
-  const inline = req.query.inline === 'true';
+  const isPreview = req.path.endsWith('/preview');
+  const inline = isPreview || req.query.inline === 'true';
 
   const resolved = resolvePath(reqPath, true);
   if (!resolved) {

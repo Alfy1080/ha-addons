@@ -1,6 +1,6 @@
 /**
- * Artifactory — Home Assistant Add-on
- * Client-side Controller & UI Logic with Multi-Node Federation
+ * Artifactory — File & Asset Manager
+ * Client-side Controller & UI Logic with Multi-Node Federation & Live Text Editing
  *
  * Zero external dependencies, pure vanilla JS.
  * Compatible with Home Assistant Ingress iframe embedding and History API.
@@ -72,6 +72,7 @@
     clearSearchBtn: document.getElementById("clearSearchBtn"),
     uploadBtn: document.getElementById("uploadBtn"),
     fileInput: document.getElementById("fileInput"),
+    newFileBtn: document.getElementById("newFileBtn"),
     newFolderBtn: document.getElementById("newFolderBtn"),
     refreshBtn: document.getElementById("refreshBtn"),
     gridViewBtn: document.getElementById("gridViewBtn"),
@@ -131,6 +132,13 @@
     newKeyAlertBox: document.getElementById("newKeyAlertBox"),
     newKeyDisplayInput: document.getElementById("newKeyDisplayInput"),
     copyNewKeyBtn: document.getElementById("copyNewKeyBtn"),
+    // New File Modal
+    newFileModal: document.getElementById("newFileModal"),
+    newFileForm: document.getElementById("newFileForm"),
+    newFileNameInput: document.getElementById("newFileNameInput"),
+    cancelNewFileBtn: document.getElementById("cancelNewFileBtn"),
+    closeNewFileModalBtn: document.getElementById("closeNewFileModalBtn"),
+    submitNewFileBtn: document.getElementById("submitNewFileBtn"),
     // New Folder Modal
     newFolderModal: document.getElementById("newFolderModal"),
     newFolderForm: document.getElementById("newFolderForm"),
@@ -156,12 +164,21 @@
   // API Client Helper
   function getApiUrl(endpoint, params = {}) {
     const base = getBasePath();
+    const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
     let url = "";
 
     if (state.activeServerId === "local") {
-      url = base + "/api/" + endpoint;
+      if (isPhp) {
+        url = base + "/api.php?action=" + encodeURIComponent(endpoint);
+      } else {
+        url = base + "/api/" + endpoint;
+      }
     } else {
-      url = base + "/api/remote/" + encodeURIComponent(state.activeServerId) + "/" + endpoint;
+      if (isPhp) {
+        url = base + "/api.php?action=remote&server_id=" + encodeURIComponent(state.activeServerId) + "&sub_action=" + encodeURIComponent(endpoint);
+      } else {
+        url = base + "/api/remote/" + encodeURIComponent(state.activeServerId) + "/" + endpoint;
+      }
     }
 
     const queryParams = new URLSearchParams();
@@ -172,7 +189,8 @@
     });
 
     const queryString = queryParams.toString();
-    return queryString ? (url + "?" + queryString) : url;
+    if (!queryString) return url;
+    return url.includes("?") ? (url + "&" + queryString) : (url + "?" + queryString);
   }
 
   async function apiRequest(endpoint, options = {}) {
@@ -290,7 +308,7 @@
     const ext = (item.ext || "").toLowerCase();
     const mime = item.mime || "";
 
-    if (["jpg", "jpeg", "png", "gif", "webp", "svg", "ico", "bmp"].includes(ext) || mime.startsWith("image/")) {
+    if (["jpg", "jpeg", "png", "gif", "webp", "ico", "bmp"].includes(ext) || (mime.startsWith("image/") && ext !== "svg")) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
     }
     if (["mp4", "webm", "mov", "avi", "mkv"].includes(ext) || mime.startsWith("video/")) {
@@ -299,7 +317,7 @@
     if (["mp3", "wav", "ogg", "flac", "m4a"].includes(ext) || mime.startsWith("audio/")) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
     }
-    if (["js", "ts", "py", "sh", "css", "html", "json", "yaml", "yml", "sql", "xml", "pem"].includes(ext)) {
+    if (["js", "ts", "py", "sh", "css", "html", "json", "yaml", "yml", "sql", "xml", "pem", "svg", "toml", "conf"].includes(ext)) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
     }
     if (["zip", "tar", "gz", "bz2", "7z", "rar"].includes(ext) || mime.includes("zip") || mime.includes("compressed")) {
@@ -426,7 +444,7 @@
         el.storageInfo.textContent = "Storage: Free " + data.storage.free_formatted + " / " + data.storage.total_formatted;
       }
       if (el.hostBadge && data.server) {
-        el.hostBadge.textContent = (data.server.name || "Artifactory") + " v" + (data.server.version || "1.1.1");
+        el.hostBadge.textContent = (data.server.name || "Artifactory") + " v" + (data.server.version || "1.1.4");
       }
     } catch (err) {
       console.warn("Could not load server info:", err);
@@ -436,6 +454,11 @@
   function updateActionButtons() {
     const canWrite = !state.isReadOnly;
 
+    if (el.newFileBtn) {
+      el.newFileBtn.disabled = !canWrite;
+      el.newFileBtn.style.opacity = canWrite ? "1" : "0.4";
+      el.newFileBtn.style.cursor = canWrite ? "pointer" : "not-allowed";
+    }
     if (el.newFolderBtn) {
       el.newFolderBtn.disabled = !canWrite;
       el.newFolderBtn.style.opacity = canWrite ? "1" : "0.4";
@@ -515,7 +538,7 @@
       if (el.emptyState) {
         el.emptyState.style.display = "flex";
         const p = el.emptyState.querySelector("p");
-        if (p) p.textContent = customMessage || "Drag and drop files here, or click the Upload button to host resources.";
+        if (p) p.textContent = customMessage || "Drag and drop files here, or click the Upload or New File button to host resources.";
       }
       el.filesContainer.style.display = "none";
       return;
@@ -550,7 +573,6 @@
         previewHtml = '<div class="file-card-preview"><div class="file-card-icon ' + (isDir ? "folder-icon" : "") + '">' + getFileIconSvg(item) + '</div></div>';
       }
 
-      const isRoot = !state.currentPath && state.activeServerId === "local";
       const canWrite = item.writable !== false && !item.is_protected && !state.isReadOnly;
       const canEdit = !isDir && isTextFile(item) && canWrite;
       const badgeHtml = getAccessBadgeHtml(item);
@@ -653,7 +675,6 @@
     items.forEach(item => {
       const isDir = item.type === "dir" || item.type === "directory";
       const tr = document.createElement("tr");
-      const isRoot = !state.currentPath && state.activeServerId === "local";
       const canWrite = item.writable !== false && !item.is_protected && !state.isReadOnly;
       const canEdit = !isDir && isTextFile(item) && canWrite;
       const accessPill = getAccessPillHtml(item);
@@ -924,7 +945,6 @@
     const ext = (item.ext || "").toLowerCase();
     const mime = item.mime || "";
     const isText = isTextFile(item);
-    const isRoot = !state.currentPath && state.activeServerId === "local";
     const canWrite = item.writable !== false && !item.is_protected && !state.isReadOnly;
 
     if (isText) {
@@ -1055,7 +1075,9 @@
   // Federation & Server Selector
   async function loadFederationServers() {
     try {
-      const res = await fetch(getBasePath() + "/api/federation/servers");
+      const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+      const url = isPhp ? (getBasePath() + "/api.php?action=servers_list") : (getBasePath() + "/api/federation/servers");
+      const res = await fetch(url);
       const data = await res.json();
       if (data && data.servers) {
         state.remoteServers = data.servers;
@@ -1113,7 +1135,9 @@
     if (!el.serversListContainer) return;
     el.serversListContainer.innerHTML = '<div class="spinner"></div>';
     try {
-      const res = await fetch(getBasePath() + "/api/federation/servers");
+      const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+      const url = isPhp ? (getBasePath() + "/api.php?action=servers_list") : (getBasePath() + "/api/federation/servers");
+      const res = await fetch(url);
       const data = await res.json();
       state.remoteServers = data.servers || [];
       renderServerSelectOptions();
@@ -1141,10 +1165,12 @@
         card.querySelector(".test-btn").addEventListener("click", async () => {
           showToast("Testing connection to " + srv.display_name + "...", "info");
           try {
-            const tRes = await fetch(getBasePath() + "/api/federation/servers/test", {
+            const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+            const tUrl = isPhp ? (getBasePath() + "/api.php?action=server_test") : (getBasePath() + "/api/federation/servers/test");
+            const tRes = await fetch(tUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ url: srv.url })
+              body: JSON.stringify({ url: srv.url, api_key: srv.api_key, cf_client_id: srv.cf_client_id, cf_client_secret: srv.cf_client_secret })
             });
             const tData = await tRes.json();
             if (tData.success) {
@@ -1160,8 +1186,12 @@
         card.querySelector(".delete-btn").addEventListener("click", async () => {
           if (!confirm("Remove server \"" + srv.display_name + "\"?")) return;
           try {
-            const delRes = await fetch(getBasePath() + "/api/federation/servers/" + encodeURIComponent(srv.id), {
-              method: "DELETE"
+            const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+            const delUrl = isPhp ? (getBasePath() + "/api.php?action=server_remove") : (getBasePath() + "/api/federation/servers/" + encodeURIComponent(srv.id));
+            const delRes = await fetch(delUrl, {
+              method: isPhp ? "POST" : "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: isPhp ? JSON.stringify({ id: srv.id }) : undefined
             });
             const delData = await delRes.json();
             if (delData.success) {
@@ -1199,7 +1229,9 @@
     if (!el.keysListContainer) return;
     el.keysListContainer.innerHTML = '<div class="spinner"></div>';
     try {
-      const res = await fetch(getBasePath() + "/api/federation/keys");
+      const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+      const url = isPhp ? (getBasePath() + "/api.php?action=federation_keys_list") : (getBasePath() + "/api/federation/keys");
+      const res = await fetch(url);
       const data = await res.json();
       const keys = data.keys || [];
 
@@ -1225,8 +1257,12 @@
         card.querySelector(".revoke-btn").addEventListener("click", async () => {
           if (!confirm("Revoke key for \"" + k.name + "\"? Remote clients using this key will immediately lose access.")) return;
           try {
-            const delRes = await fetch(getBasePath() + "/api/federation/keys/" + encodeURIComponent(k.id), {
-              method: "DELETE"
+            const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+            const delUrl = isPhp ? (getBasePath() + "/api.php?action=federation_key_revoke") : (getBasePath() + "/api/federation/keys/" + encodeURIComponent(k.id));
+            const delRes = await fetch(delUrl, {
+              method: isPhp ? "POST" : "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: isPhp ? JSON.stringify({ id: k.id }) : undefined
             });
             const delData = await delRes.json();
             if (delData.success) {
@@ -1245,6 +1281,19 @@
     }
   }
 
+  // Modals: New File
+  function openNewFileModal() {
+    if (state.isReadOnly) return;
+    el.newFileNameInput.value = "";
+    el.newFileModal.style.display = "flex";
+    el.newFileNameInput.focus();
+  }
+
+  function closeNewFileModal() {
+    el.newFileModal.style.display = "none";
+  }
+
+  // Modals: New Folder
   function openNewFolderModal() {
     if (state.isReadOnly) return;
     el.newFolderNameInput.value = "";
@@ -1311,7 +1360,9 @@
         el.testServerBtn.textContent = "Testing...";
 
         try {
-          const res = await fetch(getBasePath() + "/api/federation/servers/test", {
+          const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+          const tUrl = isPhp ? (getBasePath() + "/api.php?action=server_test") : (getBasePath() + "/api/federation/servers/test");
+          const res = await fetch(tUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url, api_key: apiKey, cf_client_id: cfId, cf_client_secret: cfSecret })
@@ -1348,7 +1399,9 @@
         }
 
         try {
-          const res = await fetch(getBasePath() + "/api/federation/servers", {
+          const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+          const sUrl = isPhp ? (getBasePath() + "/api.php?action=server_add") : (getBasePath() + "/api/federation/servers");
+          const res = await fetch(sUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1392,7 +1445,9 @@
         if (!name) return;
 
         try {
-          const res = await fetch(getBasePath() + "/api/federation/keys", {
+          const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+          const kUrl = isPhp ? (getBasePath() + "/api.php?action=federation_key_generate") : (getBasePath() + "/api/federation/keys");
+          const res = await fetch(kUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name })
@@ -1531,6 +1586,64 @@
       });
     }
 
+    // New File Form wiring
+    if (el.newFileBtn) el.newFileBtn.addEventListener("click", openNewFileModal);
+    if (el.cancelNewFileBtn) el.cancelNewFileBtn.addEventListener("click", closeNewFileModal);
+    if (el.closeNewFileModalBtn) el.closeNewFileModalBtn.addEventListener("click", closeNewFileModal);
+    if (el.newFileForm) {
+      el.newFileForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const filename = el.newFileNameInput.value.trim();
+        if (!filename) return;
+
+        const targetPath = state.currentPath ? (state.currentPath + "/" + filename) : filename;
+
+        if (el.submitNewFileBtn) {
+          el.submitNewFileBtn.disabled = true;
+          el.submitNewFileBtn.textContent = "Creating...";
+        }
+
+        try {
+          const res = await apiRequest("save", {
+            method: "POST",
+            body: { path: targetPath, content: "" }
+          });
+
+          showToast("File \"" + filename + "\" created successfully!", "success");
+          closeNewFileModal();
+          await loadDirectory(state.currentPath, false);
+
+          const ext = filename.split(".").pop().toLowerCase();
+          const newItem = (res && res.file) ? {
+            name: filename,
+            path: targetPath,
+            ext: ext,
+            mime: res.file.mime || "text/plain",
+            type: "file",
+            size_formatted: res.file.size_formatted || "0 B",
+            mtime_formatted: res.file.mtime_formatted || "Just now",
+            writable: true
+          } : {
+            name: filename,
+            path: targetPath,
+            ext: ext,
+            mime: "text/plain",
+            type: "file",
+            writable: true
+          };
+
+          openPreview(newItem, true);
+        } catch (err) {
+          showToast(err.message, "error");
+        } finally {
+          if (el.submitNewFileBtn) {
+            el.submitNewFileBtn.disabled = false;
+            el.submitNewFileBtn.textContent = "Create & Edit";
+          }
+        }
+      });
+    }
+
     if (el.newFolderBtn) el.newFolderBtn.addEventListener("click", openNewFolderModal);
     if (el.cancelNewFolderBtn) el.cancelNewFolderBtn.addEventListener("click", closeNewFolderModal);
     if (el.closeNewFolderModalBtn) el.closeNewFolderModalBtn.addEventListener("click", closeNewFolderModal);
@@ -1606,7 +1719,7 @@
       el.previewCopyUrlBtn.addEventListener("click", () => {
         if (state.previewItem) {
           const url = state.previewItem.ha_url || getApiUrl("download", { path: state.previewItem.path });
-          copyToClipboard(url, "HA URL copied: \"" + url + "\"");
+          copyToClipboard(url, "Direct URL copied: \"" + url + "\"");
         }
       });
     }
@@ -1665,6 +1778,7 @@
         closePreview();
         closeServersModal();
         closeKeysModal();
+        closeNewFileModal();
         closeNewFolderModal();
         closeRenameModal();
         closeDeleteModal();

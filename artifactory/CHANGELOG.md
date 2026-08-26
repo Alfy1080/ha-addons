@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4 — 2026-08-26
+
+### Added
+- **Create New File**: Added dedicated "New File" button and modal to create new text/code files directly and launch the in-browser live editor immediately
+- **Cross-Server Preview Support**: Added `/api/preview` route alias to handle remote proxying and previews across different Artifactory instances smoothly
+
 ## 1.1.3 — 2026-08-26
 
 ### Fixed
