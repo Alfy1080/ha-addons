@@ -34,25 +34,26 @@ const WRITE_PATHS = parsePaths('WRITE_PATHS');
 const READ_PATHS = parsePaths('READ_PATHS');
 
 /**
- * Build a map of virtual root name → { absolute, writable }
- * e.g. "/config/www" → { name: "www", absolute: "/config/www", writable: true }
+ * Build a map of virtual root name → { name, key, shortName, absolute, writable }
+ * e.g. "/config/www" → { name: "/config/www", key: "config/www", shortName: "www", absolute: "/config/www", writable: true }
  */
 function buildRoots() {
   const roots = new Map();
   const addRoot = (absPath, writable) => {
     const resolved = path.resolve(absPath);
-    // Derive a short virtual name from the path
-    let vname = path.basename(resolved);
-    // Handle duplicates by prefixing with parent dir
-    if (roots.has(vname)) {
-      const parent = path.basename(path.dirname(resolved));
-      vname = `${parent}-${vname}`;
-    }
-    // If writable version overwrites read-only, upgrade it
-    if (roots.has(vname) && writable) {
-      roots.get(vname).writable = true;
-    } else if (!roots.has(vname)) {
-      roots.set(vname, { name: vname, absolute: resolved, writable });
+    const displayName = resolved.replace(/\\/g, '/');
+    const cleanKey = displayName.replace(/^\/+/, ''); // e.g. "config/www", "share", "config/share"
+
+    if (roots.has(cleanKey)) {
+      if (writable) roots.get(cleanKey).writable = true;
+    } else {
+      roots.set(cleanKey, {
+        name: displayName,              // e.g. "/config/www", "/share", "/config/share"
+        key: cleanKey,                  // e.g. "config/www", "share", "config/share"
+        shortName: path.basename(resolved), // e.g. "www"
+        absolute: resolved,             // "/config/www"
+        writable,
+      });
     }
   };
   for (const p of WRITE_PATHS) addRoot(p, true);
@@ -63,8 +64,8 @@ function buildRoots() {
 const ROOTS = buildRoots();
 
 console.log(`[Artifactory] Configured roots:`);
-for (const [name, root] of ROOTS) {
-  console.log(`  ${name} → ${root.absolute} (${root.writable ? 'read-write' : 'read-only'})`);
+for (const [key, root] of ROOTS) {
+  console.log(`  ${root.name} (${key}) → ${root.absolute} (${root.writable ? 'read-write' : 'read-only'})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -72,56 +73,88 @@ for (const [name, root] of ROOTS) {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a virtual path (e.g. "www/icons/logo.png") to an absolute path.
- * Returns null if the path is invalid, outside allowed roots, or doesn't exist
- * (when mustExist is true).
+ * Resolve a virtual path (e.g. "config/www/icons/logo.png" or "/config/www/icons/logo.png" or "www/icons/logo.png")
+ * to an absolute path.
  *
  * @returns {{ absolute: string, relative: string, root: object, rootRelative: string } | null}
  */
 function resolvePath(virtualPath, mustExist = true) {
   if (typeof virtualPath !== 'string') return null;
 
-  const clean = virtualPath.replace(/\\/g, '/').replace(/\0/g, '');
+  const clean = virtualPath.replace(/\\/g, '/').replace(/\0/g, '').replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!clean) return null; // root listing handled separately
+
   const parts = clean.split('/').filter(p => p !== '' && p !== '.');
   if (parts.some(p => p === '..')) return null; // traversal attempt
 
-  if (parts.length === 0) return null; // root listing handled separately
+  // Match root by checking longest matching cleanKey first
+  let matchedRoot = null;
+  let subPath = '';
 
-  const rootName = parts[0];
-  const root = ROOTS.get(rootName);
-  if (!root) return null; // unknown root
+  // 1. Direct or prefix match against root key (e.g. "config/www" or "config/www/icons" or "share/data")
+  for (const [key, root] of ROOTS) {
+    if (clean === key) {
+      matchedRoot = root;
+      subPath = '';
+      break;
+    }
+    if (clean.startsWith(key + '/')) {
+      if (!matchedRoot || key.length > matchedRoot.key.length) {
+        matchedRoot = root;
+        subPath = clean.slice(key.length + 1);
+      }
+    }
+  }
 
-  const subParts = parts.slice(1);
-  const targetAbs = subParts.length > 0
-    ? path.join(root.absolute, ...subParts)
-    : root.absolute;
+  // 2. Fallback: backwards-compatible short name match (e.g. "www/icons" matching "/config/www")
+  if (!matchedRoot) {
+    for (const [key, root] of ROOTS) {
+      if (clean === root.shortName) {
+        matchedRoot = root;
+        subPath = '';
+        break;
+      }
+      if (clean.startsWith(root.shortName + '/')) {
+        matchedRoot = root;
+        subPath = clean.slice(root.shortName.length + 1);
+        break;
+      }
+    }
+  }
 
-  // Verify the resolved path is within the root
+  if (!matchedRoot) return null;
+
+  const targetAbs = subPath
+    ? path.join(matchedRoot.absolute, subPath)
+    : matchedRoot.absolute;
+
   const resolved = path.resolve(targetAbs);
-  if (resolved !== root.absolute && !resolved.startsWith(root.absolute + path.sep)) {
-    return null; // escaped the root
+  if (resolved !== matchedRoot.absolute && !resolved.startsWith(matchedRoot.absolute + path.sep)) {
+    return null; // escaped root
   }
 
   if (mustExist && !fs.existsSync(resolved)) return null;
 
   // For non-existent subpaths, verify parent exists within root
-  if (!mustExist && resolved !== root.absolute) {
+  if (!mustExist && resolved !== matchedRoot.absolute) {
     const parent = path.dirname(resolved);
     if (!fs.existsSync(parent)) return null;
     const resolvedParent = path.resolve(parent);
-    if (resolvedParent !== root.absolute && !resolvedParent.startsWith(root.absolute + path.sep)) {
+    if (resolvedParent !== matchedRoot.absolute && !resolvedParent.startsWith(matchedRoot.absolute + path.sep)) {
       return null;
     }
   }
 
-  const rootRelative = resolved === root.absolute
+  const rootRelative = resolved === matchedRoot.absolute
     ? ''
-    : resolved.slice(root.absolute.length + 1).replace(/\\/g, '/');
+    : resolved.slice(matchedRoot.absolute.length + 1).replace(/\\/g, '/');
+
+  const relative = subPath ? `${matchedRoot.key}/${subPath}` : matchedRoot.key;
 
   return {
     absolute: resolved,
-    relative: parts.join('/'),
-    root,
+    relative,
+    root: matchedRoot,
     rootRelative,
   };
 }
@@ -214,7 +247,7 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 app.get('/api/info', (req, res) => {
   const roots = [];
-  for (const [name, root] of ROOTS) {
+  for (const [key, root] of ROOTS) {
     let diskFree = null, diskTotal = null;
     try {
       const stats = fs.statfsSync(root.absolute);
@@ -223,7 +256,8 @@ app.get('/api/info', (req, res) => {
     } catch { /* ignore */ }
 
     roots.push({
-      name,
+      name: root.name,
+      key: root.key,
       path: root.absolute,
       writable: root.writable,
       disk_free: diskFree,
@@ -237,7 +271,7 @@ app.get('/api/info', (req, res) => {
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.4',
+      version: '1.0.5',
       platform: 'Home Assistant Add-on',
       node_version: process.version,
     },
@@ -254,10 +288,11 @@ app.get('/api/list', (req, res) => {
   // Root listing — show available roots
   if (!reqPath || reqPath === '/' || reqPath === '') {
     const items = [];
-    for (const [name, root] of ROOTS) {
+    for (const [key, root] of ROOTS) {
       items.push({
-        name,
-        path: name,
+        name: root.name,
+        path: root.key,
+        fs_path: root.absolute,
         type: 'dir',
         size: 0,
         size_formatted: '-',
@@ -283,13 +318,16 @@ app.get('/api/list', (req, res) => {
     return res.status(404).json({ success: false, error: 'Invalid path or outside allowed roots.' });
   }
 
-  // Build breadcrumbs
+  // Build breadcrumbs starting with root name
   const breadcrumbs = [{ name: 'Root', path: '' }];
-  const pathParts = resolved.relative.split('/');
-  let cumulative = '';
-  for (const part of pathParts) {
-    cumulative = cumulative ? `${cumulative}/${part}` : part;
-    breadcrumbs.push({ name: part, path: cumulative });
+  breadcrumbs.push({ name: resolved.root.name, path: resolved.root.key });
+  if (resolved.rootRelative) {
+    const subParts = resolved.rootRelative.split('/');
+    let cumulative = resolved.root.key;
+    for (const part of subParts) {
+      cumulative = `${cumulative}/${part}`;
+      breadcrumbs.push({ name: part, path: cumulative });
+    }
   }
 
   // If directory does not exist on disk
@@ -344,6 +382,7 @@ app.get('/api/list', (req, res) => {
     items.push({
       name: entry.name,
       path: entryRel,
+      fs_path: entryAbs,
       type: isDir ? 'dir' : 'file',
       size: isDir ? 0 : stat.size,
       size_formatted: isDir ? '-' : formatBytes(stat.size),

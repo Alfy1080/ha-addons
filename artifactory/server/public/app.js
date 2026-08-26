@@ -86,6 +86,7 @@
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewBody: document.getElementById('previewBody'),
+    previewPath: document.getElementById('previewPath'),
     previewSize: document.getElementById('previewSize'),
     previewMtime: document.getElementById('previewMtime'),
     previewMime: document.getElementById('previewMime'),
@@ -529,11 +530,15 @@
       const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
       const badgeHtml = getAccessBadgeHtml(item);
 
+      card.title = item.fs_path || item.name;
+
       card.innerHTML = `
         ${badgeHtml}
         ${previewHtml}
         <div class="file-card-info">
-          <div class="file-card-name">${escapeHtml(item.name)}</div>
+          <div class="file-card-name" title="${escapeHtml(item.fs_path || item.name)}">${escapeHtml(item.name)}</div>
+          ${item.fs_path && item.fs_path !== item.name && !state.currentPath ? `
+          <div style="font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.fs_path)}">${escapeHtml(item.fs_path)}</div>` : ''}
           <div class="file-card-meta">
             <span>${item.size_formatted || ''}</span>
             <span>${item.mtime_formatted ? item.mtime_formatted.split(' ')[0] : ''}</span>
@@ -626,7 +631,10 @@
         <td>
           <div class="list-item-name-cell">
             <div class="list-item-icon ${isDir ? 'folder-icon' : ''}">${getFileIconSvg(item)}</div>
-            <span>${escapeHtml(item.name)}</span>
+            <div style="min-width: 0;">
+              <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.fs_path || item.name)}">${escapeHtml(item.name)}</div>
+              ${item.fs_path && item.fs_path !== item.name ? `<div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(item.fs_path)}">${escapeHtml(item.fs_path)}</div>` : ''}
+            </div>
           </div>
         </td>
         <td>${accessPill}</td>
@@ -721,6 +729,7 @@
   async function openPreview(item) {
     state.previewItem = item;
     el.previewTitle.textContent = item.name;
+    if (el.previewPath) el.previewPath.textContent = `Path: ${item.fs_path || item.path}`;
     el.previewSize.textContent = `Size: ${item.size_formatted || '0 B'}`;
     el.previewMtime.textContent = `Date: ${item.mtime_formatted || '-'}`;
     el.previewMime.textContent = `MIME: ${item.mime || 'unknown'}`;

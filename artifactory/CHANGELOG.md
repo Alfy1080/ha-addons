@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5 — 2026-08-26
+
+### Added
+- **Exact Filesystem Paths**: All mapped roots and directory items now display their exact filesystem path (e.g. `/config/www`, `/share`, `/config/share`, `/config/zigbee2mqtt`) eliminating ambiguity between identically named folders across different volumes.
+- **Filesystem Path Tooltips & List Subtitles**: File cards and table rows display full absolute filesystem paths.
+- **Preview Modal Path Tag**: File preview modal explicitly shows the exact absolute path on the filesystem.
+
 ## 1.0.4 — 2026-08-26
 
 ### Fixed
