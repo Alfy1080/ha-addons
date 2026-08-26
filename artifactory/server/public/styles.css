@@ -977,14 +977,38 @@ body {
   background-color: var(--bg-primary);
   min-height: 280px;
   max-height: 55vh;
-}
-
 .preview-media-img {
   max-width: 100%;
   max-height: 50vh;
   object-fit: contain;
   border-radius: var(--border-radius-sm);
   box-shadow: var(--shadow-md);
+  background-color: var(--bg-secondary);
+  background-image: 
+    linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.05) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.05) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.05) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  padding: 0.75rem;
+}
+
+.svg-live-preview {
+  max-width: 100%;
+  max-height: 50vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background-color: var(--bg-secondary);
+  border-radius: var(--border-radius-sm);
+}
+
+.svg-live-preview svg {
+  max-width: 100%;
+  max-height: 48vh;
+  height: auto;
 }
 
 .preview-media-video, .preview-media-audio {

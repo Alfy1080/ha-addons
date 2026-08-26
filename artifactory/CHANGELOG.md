@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.5 — 2026-08-26
+
+### Fixed
+- **SVG & Rich Media Previews**: Fixed SVG files being treated purely as raw text; SVGs now render as visual graphic previews by default with transparency grid backgrounds and option to switch to live editor/preview mode
+- Expanded media support for images (JPG, PNG, WebP, SVG, AVIF, GIF, ICO, BMP), videos (MP4, WebM, MOV, MKV), and audio (MP3, WAV, OGG, FLAC, M4A)
+
 ## 1.1.4 — 2026-08-26
 
 ### Added

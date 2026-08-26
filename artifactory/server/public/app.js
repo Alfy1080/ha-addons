@@ -9,6 +9,16 @@
 (function () {
   "use strict";
 
+  const IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "ico", "bmp", "svg", "avif", "apng"];
+  const VIDEO_EXTS = ["mp4", "webm", "mov", "ogv", "mkv", "avi"];
+  const AUDIO_EXTS = ["mp3", "wav", "ogg", "flac", "m4a", "aac", "opus"];
+  const TEXT_EXTS = [
+    "txt", "md", "json", "yaml", "yml", "css", "scss", "js", "ts", "jsx", "tsx",
+    "html", "htm", "py", "sh", "bash", "pem", "key", "crt", "cert", "csr", "pub",
+    "xml", "svg", "conf", "ini", "cfg", "env", "sql", "csv", "tsv", "log", "toml",
+    "dockerfile", "gitignore"
+  ];
+
   function getBasePath() {
     if (window.__ingress_path) {
       return window.__ingress_path.replace(/\/+$/, "");
@@ -290,13 +300,7 @@
     if (!item || item.type === "dir" || item.type === "directory") return false;
     const ext = (item.ext || "").toLowerCase();
     const mime = (item.mime || "").toLowerCase();
-    const textExts = [
-      "txt", "md", "json", "yaml", "yml", "css", "scss", "js", "ts", "jsx", "tsx",
-      "html", "htm", "py", "sh", "bash", "pem", "key", "crt", "cert", "csr", "pub",
-      "xml", "svg", "conf", "ini", "cfg", "env", "sql", "csv", "tsv", "log", "toml",
-      "dockerfile", "gitignore"
-    ];
-    return textExts.includes(ext) || mime.startsWith("text/") || mime === "application/json" || mime === "application/yaml" || mime === "application/javascript" || mime === "image/svg+xml";
+    return TEXT_EXTS.includes(ext) || mime.startsWith("text/") || mime === "application/json" || mime === "application/yaml" || mime === "application/javascript" || mime === "image/svg+xml";
   }
 
   function getFileIconSvg(item) {
@@ -306,24 +310,24 @@
     }
 
     const ext = (item.ext || "").toLowerCase();
-    const mime = item.mime || "";
+    const mime = (item.mime || "").toLowerCase();
 
-    if (["jpg", "jpeg", "png", "gif", "webp", "ico", "bmp"].includes(ext) || (mime.startsWith("image/") && ext !== "svg")) {
+    if (IMAGE_EXTS.includes(ext) || mime.startsWith("image/")) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
     }
-    if (["mp4", "webm", "mov", "avi", "mkv"].includes(ext) || mime.startsWith("video/")) {
+    if (VIDEO_EXTS.includes(ext) || mime.startsWith("video/")) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>';
     }
-    if (["mp3", "wav", "ogg", "flac", "m4a"].includes(ext) || mime.startsWith("audio/")) {
+    if (AUDIO_EXTS.includes(ext) || mime.startsWith("audio/")) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
     }
-    if (["js", "ts", "py", "sh", "css", "html", "json", "yaml", "yml", "sql", "xml", "pem", "svg", "toml", "conf"].includes(ext)) {
+    if (["js", "ts", "py", "sh", "css", "html", "json", "yaml", "yml", "sql", "xml", "pem", "toml", "conf"].includes(ext)) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
     }
     if (["zip", "tar", "gz", "bz2", "7z", "rar"].includes(ext) || mime.includes("zip") || mime.includes("compressed")) {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"></polyline><line x1="1" y1="3" x2="23" y2="3"></line><line x1="10" y1="12" x2="14" y2="12"></line></svg>';
     }
-    if (["pdf"].includes(ext) || mime === "application/pdf") {
+    if (ext === "pdf" || mime === "application/pdf") {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
     }
 
@@ -444,7 +448,7 @@
         el.storageInfo.textContent = "Storage: Free " + data.storage.free_formatted + " / " + data.storage.total_formatted;
       }
       if (el.hostBadge && data.server) {
-        el.hostBadge.textContent = (data.server.name || "Artifactory") + " v" + (data.server.version || "1.1.4");
+        el.hostBadge.textContent = (data.server.name || "Artifactory") + " v" + (data.server.version || "1.1.5");
       }
     } catch (err) {
       console.warn("Could not load server info:", err);
@@ -562,7 +566,9 @@
       card.className = "file-card";
       card.title = item.fs_path || item.path || item.name;
 
-      const isImage = !isDir && (["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(item.ext) || (item.mime && item.mime.startsWith("image/")));
+      const ext = (item.ext || "").toLowerCase();
+      const mime = (item.mime || "").toLowerCase();
+      const isImage = !isDir && (IMAGE_EXTS.includes(ext) || mime.startsWith("image/"));
       let previewHtml = "";
 
       const downloadUrl = getApiUrl("download", { path: item.path, inline: "true" });
@@ -877,6 +883,14 @@
     state.editorMode = false;
     if (el.previewEditBtnText) el.previewEditBtnText.textContent = "Edit";
     if (el.previewSaveBtn) el.previewSaveBtn.style.display = "none";
+
+    if (state.previewItem) {
+      const ext = (state.previewItem.ext || "").toLowerCase();
+      if (ext === "svg") {
+        el.previewBody.innerHTML = `<div class="svg-live-preview" style="max-width: 100%; max-height: 50vh; display: flex; align-items: center; justify-content: center;">${state.editorCurrentText}</div>`;
+        return;
+      }
+    }
     el.previewBody.innerHTML = "<pre class=\"preview-media-text\">" + escapeHtml(state.editorCurrentText) + "</pre>";
   }
 
@@ -943,7 +957,11 @@
 
     const previewUrl = getApiUrl("download", { path: item.path, inline: "true" });
     const ext = (item.ext || "").toLowerCase();
-    const mime = item.mime || "";
+    const mime = (item.mime || "").toLowerCase();
+    const isImage = IMAGE_EXTS.includes(ext) || mime.startsWith("image/");
+    const isVideo = VIDEO_EXTS.includes(ext) || mime.startsWith("video/");
+    const isAudio = AUDIO_EXTS.includes(ext) || mime.startsWith("audio/");
+    const isPdf = ext === "pdf" || mime === "application/pdf";
     const isText = isTextFile(item);
     const canWrite = item.writable !== false && !item.is_protected && !state.isReadOnly;
 
@@ -963,13 +981,26 @@
     el.previewBody.innerHTML = "<div class=\"spinner\"></div>";
     el.previewModal.style.display = "flex";
 
-    if (["jpg", "jpeg", "png", "gif", "webp", "ico", "bmp"].includes(ext) || (mime.startsWith("image/") && ext !== "svg")) {
+    if (autoEdit && isText && canWrite) {
+      try {
+        const response = await fetch(previewUrl);
+        const text = await response.text();
+        state.editorOriginalContent = text;
+        state.editorCurrentText = text;
+        enterEditorMode(text);
+      } catch (err) {
+        el.previewBody.innerHTML = `<p class="warning-text">Failed to load text for editing: ${escapeHtml(err.message)}</p>`;
+      }
+      return;
+    }
+
+    if (isImage) {
       el.previewBody.innerHTML = `<img src="${previewUrl}" class="preview-media-img" alt="${escapeHtml(item.name)}">`;
-    } else if (["mp4", "webm", "mov"].includes(ext) || mime.startsWith("video/")) {
+    } else if (isVideo) {
       el.previewBody.innerHTML = `<video src="${previewUrl}" controls autoplay class="preview-media-video"></video>`;
-    } else if (["mp3", "wav", "ogg", "m4a"].includes(ext) || mime.startsWith("audio/")) {
+    } else if (isAudio) {
       el.previewBody.innerHTML = `<audio src="${previewUrl}" controls autoplay class="preview-media-audio"></audio>`;
-    } else if (ext === "pdf" || mime === "application/pdf") {
+    } else if (isPdf) {
       el.previewBody.innerHTML = `<iframe src="${previewUrl}" class="preview-media-pdf"></iframe>`;
     } else if (isText) {
       try {
@@ -977,12 +1008,7 @@
         const text = await response.text();
         state.editorOriginalContent = text;
         state.editorCurrentText = text;
-
-        if (autoEdit && canWrite) {
-          enterEditorMode(text);
-        } else {
-          el.previewBody.innerHTML = `<pre class="preview-media-text">${escapeHtml(text)}</pre>`;
-        }
+        el.previewBody.innerHTML = `<pre class="preview-media-text">${escapeHtml(text)}</pre>`;
       } catch (err) {
         el.previewBody.innerHTML = '<p class="warning-text">Failed to load text preview</p>';
       }
