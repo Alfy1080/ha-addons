@@ -8,6 +8,7 @@ This is a custom [Home Assistant](https://www.home-assistant.io/) add-on reposit
 
 | Add-on | Description |
 |---|---|
+| **Artifactory** | File explorer & asset manager for HA with web UI & REST API for LLM-driven asset management |
 | **Honeygain** | Runs the [Honeygain](https://www.honeygain.com/) passive income client as an HA add-on |
 | **Unpackerr** | Automates extraction of downloaded archives for media managers (Sonarr, Radarr, etc.) |
 | **GitHub Runner** | Runs a self-hosted GitHub Actions runner as an HA add-on for CI/CD deployments |
@@ -31,6 +32,7 @@ This is a custom [Home Assistant](https://www.home-assistant.io/) add-on reposit
 ```
 ha-addons/
 ├── repository.yaml      # Repository metadata (name, maintainer, URL)
+├── artifactory/         # Artifactory file explorer & asset manager add-on
 ├── Honeygain/           # Honeygain add-on
 ├── Unpackerr/           # Unpackerr add-on
 ├── github-runner/       # Self-hosted GitHub Actions runner add-on
