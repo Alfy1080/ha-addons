@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 — 2026-08-26
+
+### Added
+- Direct host port mapping (`8099/tcp`) in add-on configuration for direct LAN access and server-to-server federation from external devices (e.g. Synology NAS, other servers)
+
 ## 1.1.1 — 2026-08-26
 
 ### Fixed
