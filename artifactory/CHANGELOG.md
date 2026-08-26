@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 — 2026-08-26
+
+### Fixed
+- Fixed modal event bindings and duplicate DOM IDs for API Keys and Remote Servers dialogs
+- Sanitized input placeholders and documentation to remain strictly generic and dynamic
+
 ## 1.1.0 — 2026-08-26
 
 ### Added

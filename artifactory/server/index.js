@@ -17,7 +17,7 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8099', 10);
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 
 // ---------------------------------------------------------------------------
 // Configuration: parse write/read paths from environment

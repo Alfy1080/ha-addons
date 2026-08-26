@@ -1,5 +1,5 @@
 name: Artifactory
-version: 1.1.0
+version: 1.1.1
 slug: artifactory
 description: "File explorer & asset manager for Home Assistant. Upload, browse, and manage static assets via web UI and REST API. Designed for LLM-driven asset workflows."
 url: "https://github.com/Alfy1080/ha-addons/tree/main/artifactory"
