@@ -1,8 +1,8 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install Node.js and npm
-RUN apk add --no-cache nodejs npm
+# Install Node.js, npm, jq, and curl
+RUN apk add --no-cache nodejs npm jq curl
 
 # Set up application
 WORKDIR /app

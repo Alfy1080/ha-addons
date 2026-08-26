@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.3 — 2026-08-26
+
+### Fixed
+- Fixed add-on startup crash by making `ports: 8099/tcp: null` optional in config to avoid container port collision on host
+- Added native reading of `/data/options.json` inside Node.js server
+- Installed `jq` and `curl` in Dockerfile and made `run.sh` fault-tolerant
+
 ## 1.1.2 — 2026-08-26
 
 ### Added

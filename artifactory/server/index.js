@@ -17,22 +17,42 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8099', 10);
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.1.3';
 
 // ---------------------------------------------------------------------------
-// Configuration: parse write/read paths from environment
+// Configuration: parse write/read paths from options.json or environment
 // ---------------------------------------------------------------------------
 
-function parsePaths(envVar) {
-  const raw = process.env[envVar] || '';
-  return raw
-    .split(',')
-    .map(p => p.trim())
-    .filter(p => p.length > 0);
+function getAddonOptions() {
+  const optionsFile = '/data/options.json';
+  try {
+    if (fs.existsSync(optionsFile)) {
+      const raw = fs.readFileSync(optionsFile, 'utf8');
+      return JSON.parse(raw) || {};
+    }
+  } catch (err) {
+    console.warn('[Artifactory] Notice: Could not read /data/options.json:', err.message);
+  }
+  return {};
 }
 
-const WRITE_PATHS = parsePaths('WRITE_PATHS');
-const READ_PATHS = parsePaths('READ_PATHS');
+const addonOptions = getAddonOptions();
+
+function parsePaths(envVar, optionKey, defaultPaths = []) {
+  if (process.env[envVar]) {
+    return process.env[envVar]
+      .split(',')
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+  }
+  if (Array.isArray(addonOptions[optionKey]) && addonOptions[optionKey].length > 0) {
+    return addonOptions[optionKey].map(p => String(p).trim()).filter(Boolean);
+  }
+  return defaultPaths;
+}
+
+const WRITE_PATHS = parsePaths('WRITE_PATHS', 'write_paths', ['/config/www']);
+const READ_PATHS = parsePaths('READ_PATHS', 'read_paths', ['/media', '/share']);
 
 function buildRoots() {
   const roots = new Map();
