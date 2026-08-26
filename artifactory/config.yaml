@@ -1,0 +1,32 @@
+name: Artifactory
+version: 1.0.0
+slug: artifactory
+description: "File explorer & asset manager for Home Assistant. Upload, browse, and manage static assets via web UI and REST API. Designed for LLM-driven asset workflows."
+url: "https://github.com/Alfy1080/ha-addons/tree/main/artifactory"
+arch:
+  - amd64
+  - aarch64
+startup: application
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:file-tree
+panel_title: Artifactory
+map:
+  - config:rw
+  - media:rw
+  - share:rw
+  - ssl:ro
+  - backup:ro
+homeassistant_api: false
+options:
+  write_paths:
+    - "/config/www"
+  read_paths:
+    - "/media"
+    - "/share"
+schema:
+  write_paths:
+    - str
+  read_paths:
+    - str
