@@ -19,6 +19,19 @@
     "dockerfile", "gitignore"
   ];
 
+    function isPhpBackend() {
+    if (typeof window.__backend_type === "string") {
+      return window.__backend_type === "php";
+    }
+    if (window.__ingress_path) {
+      return false;
+    }
+    if (window.location.pathname.endsWith(".php") || window.location.pathname.includes("api.php")) {
+      return true;
+    }
+    return false;
+  }
+
   function getBasePath() {
     if (window.__ingress_path) {
       return window.__ingress_path.replace(/\/+$/, "");
@@ -174,7 +187,7 @@
   // API Client Helper
   function getApiUrl(endpoint, params = {}) {
     const base = getBasePath();
-    const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+    const isPhp = isPhpBackend();
     let url = "";
 
     if (state.activeServerId === "local") {
@@ -1101,7 +1114,7 @@
   // Federation & Server Selector
   async function loadFederationServers() {
     try {
-      const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+      const isPhp = isPhpBackend();
       const url = isPhp ? (getBasePath() + "/api.php?action=servers_list") : (getBasePath() + "/api/federation/servers");
       const res = await fetch(url);
       const data = await res.json();
@@ -1161,7 +1174,7 @@
     if (!el.serversListContainer) return;
     el.serversListContainer.innerHTML = '<div class="spinner"></div>';
     try {
-      const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+      const isPhp = isPhpBackend();
       const url = isPhp ? (getBasePath() + "/api.php?action=servers_list") : (getBasePath() + "/api/federation/servers");
       const res = await fetch(url);
       const data = await res.json();
@@ -1191,7 +1204,7 @@
         card.querySelector(".test-btn").addEventListener("click", async () => {
           showToast("Testing connection to " + srv.display_name + "...", "info");
           try {
-            const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+            const isPhp = isPhpBackend();
             const tUrl = isPhp ? (getBasePath() + "/api.php?action=server_test") : (getBasePath() + "/api/federation/servers/test");
             const tRes = await fetch(tUrl, {
               method: "POST",
@@ -1212,7 +1225,7 @@
         card.querySelector(".delete-btn").addEventListener("click", async () => {
           if (!confirm("Remove server \"" + srv.display_name + "\"?")) return;
           try {
-            const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+            const isPhp = isPhpBackend();
             const delUrl = isPhp ? (getBasePath() + "/api.php?action=server_remove") : (getBasePath() + "/api/federation/servers/" + encodeURIComponent(srv.id));
             const delRes = await fetch(delUrl, {
               method: isPhp ? "POST" : "DELETE",
@@ -1255,7 +1268,7 @@
     if (!el.keysListContainer) return;
     el.keysListContainer.innerHTML = '<div class="spinner"></div>';
     try {
-      const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+      const isPhp = isPhpBackend();
       const url = isPhp ? (getBasePath() + "/api.php?action=federation_keys_list") : (getBasePath() + "/api/federation/keys");
       const res = await fetch(url);
       const data = await res.json();
@@ -1283,7 +1296,7 @@
         card.querySelector(".revoke-btn").addEventListener("click", async () => {
           if (!confirm("Revoke key for \"" + k.name + "\"? Remote clients using this key will immediately lose access.")) return;
           try {
-            const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+            const isPhp = isPhpBackend();
             const delUrl = isPhp ? (getBasePath() + "/api.php?action=federation_key_revoke") : (getBasePath() + "/api/federation/keys/" + encodeURIComponent(k.id));
             const delRes = await fetch(delUrl, {
               method: isPhp ? "POST" : "DELETE",
@@ -1386,7 +1399,7 @@
         el.testServerBtn.textContent = "Testing...";
 
         try {
-          const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+          const isPhp = isPhpBackend();
           const tUrl = isPhp ? (getBasePath() + "/api.php?action=server_test") : (getBasePath() + "/api/federation/servers/test");
           const res = await fetch(tUrl, {
             method: "POST",
@@ -1425,7 +1438,7 @@
         }
 
         try {
-          const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+          const isPhp = isPhpBackend();
           const sUrl = isPhp ? (getBasePath() + "/api.php?action=server_add") : (getBasePath() + "/api/federation/servers");
           const res = await fetch(sUrl, {
             method: "POST",
@@ -1471,7 +1484,7 @@
         if (!name) return;
 
         try {
-          const isPhp = window.location.pathname.endsWith(".php") || !window.__ingress_path;
+          const isPhp = isPhpBackend();
           const kUrl = isPhp ? (getBasePath() + "/api.php?action=federation_key_generate") : (getBasePath() + "/api/federation/keys");
           const res = await fetch(kUrl, {
             method: "POST",

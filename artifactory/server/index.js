@@ -17,7 +17,7 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8099', 10);
-const APP_VERSION = '1.1.6';
+const APP_VERSION = '1.1.7';
 
 // ---------------------------------------------------------------------------
 // Configuration: parse write/read paths from options.json or environment
@@ -283,10 +283,8 @@ function sendIndexHtml(req, res) {
   const indexPath = path.join(__dirname, 'public', 'index.html');
   try {
     let html = fs.readFileSync(indexPath, 'utf8');
-    if (ingressPath) {
-      const scriptTag = `<script>window.__ingress_path = ${JSON.stringify(ingressPath)};</script>`;
-      html = html.replace('<head>', `<head>\n    ${scriptTag}`);
-    }
+    const scriptTag = `<script>window.__backend_type = "express"; window.__ingress_path = ${JSON.stringify(ingressPath)};</script>`;
+    html = html.replace('<head>', `<head>\n  ${scriptTag}`);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {

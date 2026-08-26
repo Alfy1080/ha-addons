@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.7 — 2026-08-26
+
+### Fixed
+- **Direct Domain / Custom Host Routing**: Fixed direct access via external domains (`artifactoryprod.fd35.net`, `artifactorydev.fd35.net`) incorrectly attempting PHP endpoints instead of Express REST endpoints when accessed outside Ingress
+- Injected `window.__backend_type` in index.html to dynamically bind the correct REST API backend for both Synology PHP and Home Assistant Express environments
+
 ## 1.1.6 — 2026-08-26
 
 ### Fixed
