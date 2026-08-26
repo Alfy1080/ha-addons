@@ -174,14 +174,34 @@ function deleteRecursive(target) {
 }
 
 // ---------------------------------------------------------------------------
-// Middleware
+// Middleware & Ingress Support
 // ---------------------------------------------------------------------------
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-// Serve static frontend files
-app.use(express.static(path.join(__dirname, 'public')));
+/** Helper to serve index.html with Ingress path injected */
+function sendIndexHtml(req, res) {
+  const ingressPath = req.headers['x-ingress-path'] || '';
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  try {
+    let html = fs.readFileSync(indexPath, 'utf8');
+    if (ingressPath) {
+      const scriptTag = `<script>window.__ingress_path = ${JSON.stringify(ingressPath)};</script>`;
+      html = html.replace('<head>', `<head>\n    ${scriptTag}`);
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    res.status(500).send('Failed to load Artifactory UI: ' + err.message);
+  }
+}
+
+// Ingress entry routes
+app.get(['/', '/index.html'], sendIndexHtml);
+
+// Serve static frontend assets (css, js, icons, etc.)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Multer for multipart uploads (store in /tmp temporarily)
 const upload = multer({
@@ -217,7 +237,7 @@ app.get('/api/info', (req, res) => {
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.0',
+      version: '1.0.1',
       platform: 'Home Assistant Add-on',
       node_version: process.version,
     },
@@ -711,7 +731,7 @@ app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ success: false, error: 'Unknown API endpoint.' });
   }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  sendIndexHtml(req, res);
 });
 
 // ---------------------------------------------------------------------------

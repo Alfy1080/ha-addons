@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — 2026-08-26
+
+### Fixed
+- Fixed Home Assistant Ingress base path resolution in frontend (`app.js`)
+- Added Ingress `X-Ingress-Path` dynamic injection in Express server (`index.js`)
+- Fixed error popup handling and HTML entity escaping
+- Enabled sidebar panel by default (`ingress_panel: true`)
+
 ## 1.0.0 — 2026-08-26
 
 ### Added

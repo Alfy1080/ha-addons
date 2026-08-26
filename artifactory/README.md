@@ -1,6 +1,6 @@
 # Artifactory — Home Assistant Add-on
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Supports amd64](https://img.shields.io/badge/amd64-yes-green)
 ![Supports aarch64](https://img.shields.io/badge/aarch64-yes-green)
 

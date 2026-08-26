@@ -1,30 +1,58 @@
-// Configuration
-const CONFIG = {
-    // Determine base path, handling HA Ingress if present
-    basePath: window.__ingress_path || '',
-};
+// HTML entity escaping helper
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// Configuration & Base Path Resolution for HA Ingress
+function getBasePath() {
+    if (window.__ingress_path) {
+        return window.__ingress_path.replace(/\/+$/, '');
+    }
+    const pathname = window.location.pathname || '';
+    const ingressMatch = pathname.match(/^(\/api\/hassio_ingress\/[^/]+)/);
+    if (ingressMatch) {
+        return ingressMatch[1];
+    }
+    return pathname.replace(/\/[^/]*$/, '').replace(/\/+$/, '');
+}
 
 // API Helpers
 const api = {
     url(endpoint) {
-        return `${CONFIG.basePath}/api${endpoint}`;
+        const base = getBasePath();
+        const ep = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+        return `${base}/api${ep}`;
     },
     async fetch(endpoint, options = {}) {
         const url = this.url(endpoint);
         try {
             const response = await fetch(url, options);
             if (!response.ok) {
-                const err = await response.json().catch(() => ({ error: response.statusText }));
-                throw new Error(err.error || response.statusText);
+                let errorMsg = `HTTP ${response.status}: ${response.statusText || 'Request failed'}`;
+                try {
+                    const data = await response.json();
+                    if (data && data.error) errorMsg = data.error;
+                } catch {
+                    try {
+                        const text = await response.text();
+                        if (text) errorMsg = text.slice(0, 150);
+                    } catch {}
+                }
+                throw new Error(errorMsg);
             }
-            // Some endpoints (like delete/rename) might just return empty on success or basic json
             const contentType = response.headers.get("content-type");
             if (contentType && contentType.includes("application/json")) {
                 return response.json();
             }
             return response.text();
         } catch (error) {
-            toast.error(error.message);
+            toast.error(error.message || 'Operation failed');
             throw error;
         }
     }
@@ -85,6 +113,9 @@ const els = {
 // Toast Notifications
 const toast = {
     show(message, type = 'info') {
+        const text = String(message || (type === 'error' ? 'An unexpected error occurred' : '')).trim();
+        if (!text) return;
+
         const el = document.createElement('div');
         el.className = `toast toast-${type} px-4 py-3 rounded shadow-lg flex items-center gap-2 border border-gray-700 min-w-[250px] animate-slide-in`;
         
@@ -95,7 +126,7 @@ const toast = {
         
         el.innerHTML = `
             <span class="material-icons-round text-lg">${icon}</span>
-            <span class="text-sm font-medium flex-1">${message}</span>
+            <span class="text-sm font-medium flex-1">${escapeHtml(text)}</span>
             <button class="text-gray-400 hover:text-white ml-2"><span class="material-icons-round text-sm">close</span></button>
         `;
         
