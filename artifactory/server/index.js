@@ -1,10 +1,10 @@
 /**
  * Artifactory — Home Assistant Add-on
- * File explorer & asset manager REST API
+ * File explorer & asset manager REST API with Multi-Node Federation
  *
- * Provides file management endpoints accessible via HA Ingress proxy.
- * Supports multipart uploads, base64 JSON uploads, and URL-fetch downloads.
- * Designed for LLM-driven asset workflows via ha_manage_app MCP proxy.
+ * Provides file management endpoints accessible via HA Ingress proxy and REST API.
+ * Supports multipart uploads, base64 JSON uploads, and in-browser text file editing.
+ * Features Client/Server Federation with LLM Server Transparency & Proxying.
  */
 
 const express = require('express');
@@ -13,15 +13,16 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8099', 10);
+const APP_VERSION = '1.1.0';
 
 // ---------------------------------------------------------------------------
 // Configuration: parse write/read paths from environment
 // ---------------------------------------------------------------------------
 
-/** Parse comma-separated path list from env var */
 function parsePaths(envVar) {
   const raw = process.env[envVar] || '';
   return raw
@@ -33,25 +34,21 @@ function parsePaths(envVar) {
 const WRITE_PATHS = parsePaths('WRITE_PATHS');
 const READ_PATHS = parsePaths('READ_PATHS');
 
-/**
- * Build a map of virtual root name → { name, key, shortName, absolute, writable }
- * e.g. "/config/www" → { name: "/config/www", key: "config/www", shortName: "www", absolute: "/config/www", writable: true }
- */
 function buildRoots() {
   const roots = new Map();
   const addRoot = (absPath, writable) => {
     const resolved = path.resolve(absPath);
     const displayName = resolved.replace(/\\/g, '/');
-    const cleanKey = displayName.replace(/^\/+/, ''); // e.g. "config/www", "share", "config/share"
+    const cleanKey = displayName.replace(/^\/+/, '');
 
     if (roots.has(cleanKey)) {
       if (writable) roots.get(cleanKey).writable = true;
     } else {
       roots.set(cleanKey, {
-        name: displayName,              // e.g. "/config/www", "/share", "/config/share"
-        key: cleanKey,                  // e.g. "config/www", "share", "config/share"
-        shortName: path.basename(resolved), // e.g. "www"
-        absolute: resolved,             // "/config/www"
+        name: displayName,
+        key: cleanKey,
+        shortName: path.basename(resolved),
+        absolute: resolved,
         writable,
       });
     }
@@ -69,29 +66,64 @@ for (const [key, root] of ROOTS) {
 }
 
 // ---------------------------------------------------------------------------
+// Federation & Remote Server Storage
+// ---------------------------------------------------------------------------
+
+const DATA_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, '.data');
+if (!fs.existsSync(DATA_DIR)) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
+}
+const FEDERATION_FILE = path.join(DATA_DIR, 'federation.json');
+
+function loadFederationData() {
+  try {
+    if (fs.existsSync(FEDERATION_FILE)) {
+      const raw = fs.readFileSync(FEDERATION_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      return {
+        api_keys: Array.isArray(parsed.api_keys) ? parsed.api_keys : [],
+        servers: Array.isArray(parsed.servers) ? parsed.servers : []
+      };
+    }
+  } catch (err) {
+    console.warn('[Federation] Could not read federation file:', err.message);
+  }
+  return { api_keys: [], servers: [] };
+}
+
+function saveFederationData(data) {
+  try {
+    fs.writeFileSync(FEDERATION_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[Federation] Failed to save federation data:', err.message);
+    throw err;
+  }
+}
+
+function generateSecretKey() {
+  return 'art_sec_' + crypto.randomBytes(24).toString('hex');
+}
+
+function getLocalNodeName() {
+  return process.env.NODE_NAME || process.env.HOSTNAME || 'Home Assistant';
+}
+
+// ---------------------------------------------------------------------------
 // Path resolution & security
 // ---------------------------------------------------------------------------
 
-/**
- * Resolve a virtual path (e.g. "config/www/icons/logo.png" or "/config/www/icons/logo.png" or "www/icons/logo.png")
- * to an absolute path.
- *
- * @returns {{ absolute: string, relative: string, root: object, rootRelative: string } | null}
- */
 function resolvePath(virtualPath, mustExist = true) {
   if (typeof virtualPath !== 'string') return null;
 
   const clean = virtualPath.replace(/\\/g, '/').replace(/\0/g, '').replace(/^\/+/, '').replace(/\/+$/, '');
-  if (!clean) return null; // root listing handled separately
+  if (!clean) return null;
 
   const parts = clean.split('/').filter(p => p !== '' && p !== '.');
-  if (parts.some(p => p === '..')) return null; // traversal attempt
+  if (parts.some(p => p === '..')) return null;
 
-  // Match root by checking longest matching cleanKey first
   let matchedRoot = null;
   let subPath = '';
 
-  // 1. Direct or prefix match against root key (e.g. "config/www" or "config/www/icons" or "share/data")
   for (const [key, root] of ROOTS) {
     if (clean === key) {
       matchedRoot = root;
@@ -99,24 +131,18 @@ function resolvePath(virtualPath, mustExist = true) {
       break;
     }
     if (clean.startsWith(key + '/')) {
-      if (!matchedRoot || key.length > matchedRoot.key.length) {
-        matchedRoot = root;
-        subPath = clean.slice(key.length + 1);
-      }
+      matchedRoot = root;
+      subPath = clean.slice(key.length + 1);
+      break;
     }
   }
 
-  // 2. Fallback: backwards-compatible short name match (e.g. "www/icons" matching "/config/www")
   if (!matchedRoot) {
-    for (const [key, root] of ROOTS) {
-      if (clean === root.shortName) {
+    const firstPart = parts[0];
+    for (const [, root] of ROOTS) {
+      if (root.shortName === firstPart) {
         matchedRoot = root;
-        subPath = '';
-        break;
-      }
-      if (clean.startsWith(root.shortName + '/')) {
-        matchedRoot = root;
-        subPath = clean.slice(root.shortName.length + 1);
+        subPath = parts.slice(1).join('/');
         break;
       }
     }
@@ -124,50 +150,44 @@ function resolvePath(virtualPath, mustExist = true) {
 
   if (!matchedRoot) return null;
 
-  const targetAbs = subPath
+  const targetAbsolute = subPath
     ? path.join(matchedRoot.absolute, subPath)
     : matchedRoot.absolute;
 
-  const resolved = path.resolve(targetAbs);
+  const resolved = path.resolve(targetAbsolute);
   if (resolved !== matchedRoot.absolute && !resolved.startsWith(matchedRoot.absolute + path.sep)) {
-    return null; // escaped root
+    return null;
   }
 
-  if (mustExist && !fs.existsSync(resolved)) return null;
-
-  // For non-existent subpaths, verify parent exists within root
-  if (!mustExist && resolved !== matchedRoot.absolute) {
-    const parent = path.dirname(resolved);
-    if (!fs.existsSync(parent)) return null;
-    const resolvedParent = path.resolve(parent);
-    if (resolvedParent !== matchedRoot.absolute && !resolvedParent.startsWith(matchedRoot.absolute + path.sep)) {
-      return null;
-    }
+  if (mustExist && !fs.existsSync(resolved)) {
+    return null;
   }
 
   const rootRelative = resolved === matchedRoot.absolute
     ? ''
-    : resolved.slice(matchedRoot.absolute.length + 1).replace(/\\/g, '/');
+    : resolved.slice(matchedRoot.absolute.length).replace(/^[/\\]+/, '').replace(/\\/g, '/');
 
-  const relative = subPath ? `${matchedRoot.key}/${subPath}` : matchedRoot.key;
+  const virtualRelative = rootRelative
+    ? `${matchedRoot.key}/${rootRelative}`
+    : matchedRoot.key;
 
   return {
     absolute: resolved,
-    relative,
+    relative: virtualRelative,
     root: matchedRoot,
     rootRelative,
   };
 }
 
-/** Format bytes to human readable string */
-function formatBytes(bytes) {
+function formatBytes(bytes, precision = 2) {
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 2 : 0) + ' ' + units[i];
+  const k = 1024;
+  const i = Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(k));
+  const val = bytes / Math.pow(k, i);
+  return `${val.toFixed(precision)} ${units[Math.min(i, units.length - 1)]}`;
 }
 
-/** Get MIME type from extension */
 function getMime(filepath) {
   const ext = path.extname(filepath).toLowerCase().slice(1);
   const map = {
@@ -179,15 +199,12 @@ function getMime(filepath) {
     mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
     mp4: 'video/mp4', webm: 'video/webm', csv: 'text/csv',
     yaml: 'text/yaml', yml: 'text/yaml', sh: 'text/x-shellscript',
-    py: 'text/x-python', log: 'text/plain',
+    py: 'text/x-python', log: 'text/plain', pem: 'text/plain',
+    key: 'text/plain', crt: 'text/plain', cert: 'text/plain',
   };
   return map[ext] || 'application/octet-stream';
 }
 
-/**
- * Compute the Home Assistant `/local/` URL for a file if it's under /config/www.
- * Returns null if not applicable.
- */
 function getHaUrl(root, rootRelative) {
   if (root.absolute === '/config/www' || root.absolute === path.resolve('/config/www')) {
     const subPath = rootRelative || '';
@@ -196,7 +213,6 @@ function getHaUrl(root, rootRelative) {
   return null;
 }
 
-/** Recursively delete a directory */
 function deleteRecursive(target) {
   const stat = fs.statSync(target);
   if (stat.isDirectory()) {
@@ -207,13 +223,41 @@ function deleteRecursive(target) {
 }
 
 // ---------------------------------------------------------------------------
-// Middleware & Ingress Support
+// Middleware & Authentication
 // ---------------------------------------------------------------------------
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-/** Helper to serve index.html with Ingress path injected */
+// Check bearer token for incoming remote API requests
+app.use((req, res, next) => {
+  // Allow Ingress and internal browser sessions
+  const isIngress = Boolean(req.headers['x-ingress-path'] || req.headers['x-ha-access']);
+  const authHeader = req.headers['authorization'] || '';
+  const customKeyHeader = req.headers['x-artifactory-key'] || '';
+
+  let token = '';
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (customKeyHeader) {
+    token = customKeyHeader.trim();
+  }
+
+  // Attach auth metadata
+  req.isIngress = isIngress;
+  req.authToken = token;
+
+  const fedData = loadFederationData();
+  if (token && fedData.api_keys.length > 0) {
+    const matched = fedData.api_keys.find(k => k.key === token);
+    if (matched) {
+      req.authenticatedKey = matched;
+    }
+  }
+
+  next();
+});
+
 function sendIndexHtml(req, res) {
   const ingressPath = req.headers['x-ingress-path'] || '';
   const indexPath = path.join(__dirname, 'public', 'index.html');
@@ -232,11 +276,8 @@ function sendIndexHtml(req, res) {
 
 // Ingress entry routes
 app.get(['/', '/index.html'], sendIndexHtml);
-
-// Serve static frontend assets (css, js, icons, etc.)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// Multer for multipart uploads (store in /tmp temporarily)
 const upload = multer({
   dest: '/tmp/artifactory-uploads',
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
@@ -248,32 +289,50 @@ const upload = multer({
 app.get('/api/info', (req, res) => {
   const roots = [];
   for (const [key, root] of ROOTS) {
-    let diskFree = null, diskTotal = null;
+    let freeBytes = null;
+    let totalBytes = null;
     try {
-      const stats = fs.statfsSync(root.absolute);
-      diskFree = stats.bfree * stats.bsize;
-      diskTotal = stats.blocks * stats.bsize;
-    } catch { /* ignore */ }
+      if (fs.existsSync(root.absolute)) {
+        const stat = fs.statSync(root.absolute);
+        if (stat.isDirectory()) {
+          const df = fs.statfsSync ? fs.statfsSync(root.absolute) : null;
+          if (df) {
+            freeBytes = df.bavail * df.bsize;
+            totalBytes = df.blocks * df.bsize;
+          }
+        }
+      }
+    } catch {}
 
     roots.push({
       name: root.name,
       key: root.key,
-      path: root.absolute,
+      shortName: root.shortName,
+      path: root.key,
+      fs_path: root.absolute,
       writable: root.writable,
-      disk_free: diskFree,
-      disk_free_formatted: diskFree !== null ? formatBytes(diskFree) : 'Unknown',
-      disk_total: diskTotal,
-      disk_total_formatted: diskTotal !== null ? formatBytes(diskTotal) : 'Unknown',
+      exists: fs.existsSync(root.absolute),
+      disk_free_bytes: freeBytes,
+      disk_free_formatted: freeBytes ? formatBytes(freeBytes) : null,
+      disk_total_bytes: totalBytes,
+      disk_total_formatted: totalBytes ? formatBytes(totalBytes) : null,
     });
   }
+
+  const fedData = loadFederationData();
 
   res.json({
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.6',
-      platform: 'Home Assistant Add-on',
-      node_version: process.version,
+      version: APP_VERSION,
+      platform: 'Home Assistant OS / Add-on',
+      node_name: getLocalNodeName(),
+      roots_count: roots.length,
+      federation: {
+        configured_servers: fedData.servers.length,
+        active_keys: fedData.api_keys.length
+      }
     },
     roots,
   });
@@ -283,30 +342,44 @@ app.get('/api/info', (req, res) => {
 // API: GET /api/list
 // ---------------------------------------------------------------------------
 app.get('/api/list', (req, res) => {
-  const reqPath = (req.query.path || '').toString();
+  const reqPath = (req.query.path || '').toString().trim();
 
-  // Root listing — show available roots
-  if (!reqPath || reqPath === '/' || reqPath === '') {
+  // Root listing: list all configured virtual roots
+  if (!reqPath) {
     const items = [];
     for (const [key, root] of ROOTS) {
+      const exists = fs.existsSync(root.absolute);
+      let size = 0;
+      let mtimeFormatted = '-';
+
+      if (exists) {
+        try {
+          const stat = fs.statSync(root.absolute);
+          mtimeFormatted = stat.mtime.toISOString().replace('T', ' ').slice(0, 19);
+        } catch {}
+      }
+
       items.push({
         name: root.name,
+        key: root.key,
         path: root.key,
         fs_path: root.absolute,
         type: 'dir',
-        size: 0,
-        size_formatted: '-',
-        mtime: 0,
-        mtime_formatted: '-',
+        writable: root.writable,
+        exists,
+        size,
+        size_formatted: exists ? '-' : '(not created)',
+        mtime_formatted: mtimeFormatted,
         mime: 'directory',
         ext: '',
-        writable: root.writable,
-        ha_url: root.absolute === '/config/www' ? '/local/' : null,
+        ha_url: null,
       });
     }
+
     return res.json({
       success: true,
       current_path: '',
+      roots: items,
       breadcrumbs: [{ name: 'Root', path: '' }],
       total_items: items.length,
       items,
@@ -315,87 +388,88 @@ app.get('/api/list', (req, res) => {
 
   const resolved = resolvePath(reqPath, false);
   if (!resolved) {
-    return res.status(404).json({ success: false, error: 'Invalid path or outside allowed roots.' });
+    return res.status(404).json({ success: false, error: 'Directory not found or invalid path.' });
   }
 
-  // Build breadcrumbs starting with root name
-  const breadcrumbs = [{ name: 'Root', path: '' }];
-  breadcrumbs.push({ name: resolved.root.name, path: resolved.root.key });
-  if (resolved.rootRelative) {
-    const subParts = resolved.rootRelative.split('/');
-    let cumulative = resolved.root.key;
-    for (const part of subParts) {
-      cumulative = `${cumulative}/${part}`;
-      breadcrumbs.push({ name: part, path: cumulative });
-    }
-  }
-
-  // If directory does not exist on disk
   if (!fs.existsSync(resolved.absolute)) {
-    if (resolved.root.writable) {
-      try {
-        fs.mkdirSync(resolved.absolute, { recursive: true });
-      } catch (err) {
-        return res.status(500).json({ success: false, error: `Failed to create directory: ${err.message}` });
-      }
-    } else {
-      return res.json({
-        success: true,
-        current_path: resolved.relative,
-        breadcrumbs,
-        total_items: 0,
-        items: [],
-        exists: false,
-        writable: false,
-        message: `Directory "${resolved.root.absolute}" does not exist on the filesystem.`,
-      });
+    const parts = resolved.relative.split('/');
+    const breadcrumbs = [{ name: 'Root', path: '' }];
+    let accum = '';
+    for (const p of parts) {
+      accum = accum ? `${accum}/${p}` : p;
+      breadcrumbs.push({ name: p, path: accum });
     }
-  }
-
-  if (!fs.statSync(resolved.absolute).isDirectory()) {
-    return res.status(400).json({ success: false, error: 'Target path is not a directory.' });
-  }
-
-  // List entries
-  let entries;
-  try {
-    entries = fs.readdirSync(resolved.absolute, { withFileTypes: true });
-  } catch {
-    return res.status(500).json({ success: false, error: 'Failed to read directory.' });
-  }
-
-  const items = [];
-  for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue; // skip hidden files
-
-    const entryAbs = path.join(resolved.absolute, entry.name);
-    const entryRel = `${resolved.relative}/${entry.name}`;
-    const isDir = entry.isDirectory();
-    let stat;
-    try { stat = fs.statSync(entryAbs); } catch { continue; }
-
-    const ext = isDir ? '' : path.extname(entry.name).toLowerCase().slice(1);
-    const haUrl = getHaUrl(resolved.root, resolved.rootRelative
-      ? `${resolved.rootRelative}/${entry.name}`
-      : entry.name);
-
-    items.push({
-      name: entry.name,
-      path: entryRel,
-      fs_path: entryAbs,
-      type: isDir ? 'dir' : 'file',
-      size: isDir ? 0 : stat.size,
-      size_formatted: isDir ? '-' : formatBytes(stat.size),
-      mtime: Math.floor(stat.mtimeMs / 1000),
-      mtime_formatted: stat.mtime.toISOString().replace('T', ' ').slice(0, 19),
-      mime: isDir ? 'directory' : getMime(entryAbs),
-      ext,
+    return res.json({
+      success: true,
+      current_path: resolved.relative,
+      breadcrumbs,
+      total_items: 0,
+      items: [],
       writable: resolved.root.writable,
-      ha_url: isDir ? null : haUrl,
+      message: `Folder "${resolved.root.name}" does not exist on disk yet. Upload a file to initialize it.`,
     });
   }
 
-  // Sort: directories first, then alphabetical
+  const stat = fs.statSync(resolved.absolute);
+  if (!stat.isDirectory()) {
+    return res.status(400).json({ success: false, error: 'Path is not a directory.' });
+  }
+
+  let entries;
+  try {
+    entries = fs.readdirSync(resolved.absolute, { withFileTypes: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: `Failed to read directory: ${err.message}` });
+  }
+
+  const items = [];
+  const showHidden = req.query.hidden === 'true';
+
+  for (const entry of entries) {
+    if (!showHidden && entry.name.startsWith('.')) continue;
+
+    const fullPath = path.join(resolved.absolute, entry.name);
+    let entryStat;
+    try {
+      entryStat = fs.statSync(fullPath);
+    } catch {
+      continue;
+    }
+
+    const isDir = entry.isDirectory();
+    const subRel = resolved.rootRelative
+      ? `${resolved.rootRelative}/${entry.name}`
+      : entry.name;
+    const itemVirtualPath = `${resolved.root.key}/${subRel}`;
+    const ext = isDir ? '' : path.extname(entry.name).toLowerCase().slice(1);
+    const mime = isDir ? 'directory' : getMime(fullPath);
+    const haUrl = isDir ? null : getHaUrl(resolved.root, subRel);
+
+    items.push({
+      name: entry.name,
+      path: itemVirtualPath,
+      fs_path: fullPath,
+      type: isDir ? 'dir' : 'file',
+      size: isDir ? 0 : entryStat.size,
+      size_formatted: isDir ? '-' : formatBytes(entryStat.size),
+      mtime: entryStat.mtimeMs,
+      mtime_formatted: entryStat.mtime.toISOString().replace('T', ' ').slice(0, 19),
+      mime,
+      ext,
+      writable: resolved.root.writable,
+      ha_url: haUrl,
+    });
+  }
+
+  // Breadcrumbs
+  const breadcrumbs = [{ name: 'Root', path: '' }];
+  const parts = resolved.relative.split('/');
+  let accum = '';
+  for (const p of parts) {
+    accum = accum ? `${accum}/${p}` : p;
+    breadcrumbs.push({ name: p, path: accum });
+  }
+
   items.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -427,7 +501,6 @@ app.post('/api/save', (req, res) => {
     return res.status(403).json({ success: false, error: `Path "${resolved.root.name}" is read-only.` });
   }
 
-  // Ensure parent directory exists
   const parentDir = path.dirname(resolved.absolute);
   if (!fs.existsSync(parentDir)) {
     fs.mkdirSync(parentDir, { recursive: true });
@@ -459,41 +532,40 @@ app.post('/api/save', (req, res) => {
 // ---------------------------------------------------------------------------
 // API: POST /api/upload
 // ---------------------------------------------------------------------------
-app.post('/api/upload', upload.array('files', 100), (req, res) => {
-  // Mode 1: Base64 JSON upload
-  if (req.body && req.body.content_base64) {
-    const { filename, content_base64, overwrite } = req.body;
-    const targetPath = req.body.path || '';
+app.post('/api/upload', upload.array('files'), async (req, res) => {
+  const reqPath = (req.body.path || req.query.path || '').toString().trim();
+  const overwrite = req.body.overwrite === 'true' || req.body.overwrite === true;
 
-    if (!filename) {
-      return res.status(400).json({ success: false, error: 'filename is required for base64 upload.' });
+  // 1. JSON base64 upload
+  if (req.body.content_base64 && req.body.filename) {
+    const filename = req.body.filename.trim();
+    if (/[\/\\:*?"<>|]/.test(filename)) {
+      return res.status(400).json({ success: false, error: 'Invalid filename.' });
     }
 
-    // Resolve destination
-    const destVirtual = targetPath ? `${targetPath}/${filename}` : filename;
-    const resolved = resolvePath(destVirtual, false);
+    const targetVirtual = reqPath ? `${reqPath}/${filename}` : filename;
+    const resolved = resolvePath(targetVirtual, false);
+
     if (!resolved) {
-      return res.status(400).json({ success: false, error: 'Invalid destination path.' });
+      return res.status(400).json({ success: false, error: 'Invalid target path.' });
     }
     if (!resolved.root.writable) {
       return res.status(403).json({ success: false, error: `Path "${resolved.root.name}" is read-only.` });
     }
 
-    // Check if file exists
+    const destDir = path.dirname(resolved.absolute);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+
     if (fs.existsSync(resolved.absolute) && !overwrite) {
-      return res.status(409).json({ success: false, error: 'File already exists. Set overwrite=true to replace.' });
+      return res.status(409).json({ success: false, error: 'File already exists and overwrite is false.' });
     }
 
-    // Ensure parent directory exists
-    const parentDir = path.dirname(resolved.absolute);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-
-    // Decode and write
     try {
-      const buffer = Buffer.from(content_base64, 'base64');
+      const buffer = Buffer.from(req.body.content_base64, 'base64');
       fs.writeFileSync(resolved.absolute, buffer);
+      const stat = fs.statSync(resolved.absolute);
       const haUrl = getHaUrl(resolved.root, resolved.rootRelative);
 
       return res.json({
@@ -501,8 +573,9 @@ app.post('/api/upload', upload.array('files', 100), (req, res) => {
         uploaded: [{
           name: filename,
           path: resolved.relative,
-          size: buffer.length,
-          size_formatted: formatBytes(buffer.length),
+          fs_path: resolved.absolute,
+          size: stat.size,
+          size_formatted: formatBytes(stat.size),
           ha_url: haUrl,
         }],
         count: 1,
@@ -512,152 +585,69 @@ app.post('/api/upload', upload.array('files', 100), (req, res) => {
     }
   }
 
-  // Mode 2: Multipart file upload
-  if (req.files && req.files.length > 0) {
-    const targetPath = req.body.path || '';
-    const overwrite = req.body.overwrite === 'true' || req.body.overwrite === true;
-
-    // Verify target directory
-    const dirResolved = resolvePath(targetPath, true);
-    if (!dirResolved || !fs.statSync(dirResolved.absolute).isDirectory()) {
-      // Clean up temp files
-      req.files.forEach(f => { try { fs.unlinkSync(f.path); } catch {} });
-      return res.status(404).json({ success: false, error: 'Upload target directory does not exist.' });
-    }
-    if (!dirResolved.root.writable) {
-      req.files.forEach(f => { try { fs.unlinkSync(f.path); } catch {} });
-      return res.status(403).json({ success: false, error: `Path "${dirResolved.root.name}" is read-only.` });
-    }
-
-    const uploaded = [];
-    const errors = [];
-
-    for (const file of req.files) {
-      const fname = file.originalname;
-      const dest = path.join(dirResolved.absolute, fname);
-      const relPath = `${dirResolved.relative}/${fname}`;
-
-      if (fs.existsSync(dest) && !overwrite) {
-        errors.push({ file: fname, error: 'File already exists. Set overwrite=true to replace.' });
-        try { fs.unlinkSync(file.path); } catch {}
-        continue;
-      }
-
-      try {
-        fs.renameSync(file.path, dest);
-        const haUrl = getHaUrl(dirResolved.root, dirResolved.rootRelative
-          ? `${dirResolved.rootRelative}/${fname}` : fname);
-        uploaded.push({
-          name: fname,
-          path: relPath,
-          size: file.size,
-          size_formatted: formatBytes(file.size),
-          ha_url: haUrl,
-        });
-      } catch (err) {
-        errors.push({ file: fname, error: err.message });
-        try { fs.unlinkSync(file.path); } catch {}
-      }
-    }
-
-    return res.json({
-      success: uploaded.length > 0,
-      uploaded,
-      errors,
-      count: uploaded.length,
-    });
+  // 2. Multipart file upload
+  if (!reqPath) {
+    return res.status(400).json({ success: false, error: 'Target path is required for upload.' });
   }
 
-  return res.status(400).json({ success: false, error: 'No files received. Use multipart form or base64 JSON body.' });
-});
-
-// ---------------------------------------------------------------------------
-// API: POST /api/fetch — download file from URL
-// ---------------------------------------------------------------------------
-app.post('/api/fetch', (req, res) => {
-  const { url, dest_path, overwrite } = req.body || {};
-
-  if (!url || !dest_path) {
-    return res.status(400).json({ success: false, error: 'url and dest_path are required.' });
-  }
-
-  const resolved = resolvePath(dest_path, false);
+  const resolved = resolvePath(reqPath, false);
   if (!resolved) {
-    return res.status(400).json({ success: false, error: 'Invalid destination path.' });
+    return res.status(400).json({ success: false, error: 'Invalid target directory path.' });
   }
   if (!resolved.root.writable) {
     return res.status(403).json({ success: false, error: `Path "${resolved.root.name}" is read-only.` });
   }
-  if (fs.existsSync(resolved.absolute) && !overwrite) {
-    return res.status(409).json({ success: false, error: 'File already exists. Set overwrite=true to replace.' });
+
+  if (!fs.existsSync(resolved.absolute)) {
+    fs.mkdirSync(resolved.absolute, { recursive: true });
   }
 
-  // Ensure parent directory exists
-  const parentDir = path.dirname(resolved.absolute);
-  if (!fs.existsSync(parentDir)) {
-    fs.mkdirSync(parentDir, { recursive: true });
+  const files = req.files || [];
+  if (files.length === 0) {
+    return res.status(400).json({ success: false, error: 'No files received for upload.' });
   }
 
-  const client = url.startsWith('https') ? https : http;
-  const fileStream = fs.createWriteStream(resolved.absolute);
+  const uploaded = [];
+  const errors = [];
 
-  const fetchUrl = (targetUrl, redirectCount = 0) => {
-    if (redirectCount > 5) {
-      fileStream.close();
-      try { fs.unlinkSync(resolved.absolute); } catch {}
-      return res.status(400).json({ success: false, error: 'Too many redirects.' });
-    }
+  for (const f of files) {
+    const filename = path.basename(f.originalname);
+    const destPath = path.join(resolved.absolute, filename);
+    const subRel = resolved.rootRelative ? `${resolved.rootRelative}/${filename}` : filename;
+    const itemVirtual = `${resolved.root.key}/${subRel}`;
 
-    const requestFn = targetUrl.startsWith('https') ? https : http;
-    requestFn.get(targetUrl, (response) => {
-      // Handle redirects
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        return fetchUrl(response.headers.location, redirectCount + 1);
-      }
+    try {
+      fs.renameSync(f.path, destPath);
+      const stat = fs.statSync(destPath);
+      const haUrl = getHaUrl(resolved.root, subRel);
 
-      if (response.statusCode !== 200) {
-        fileStream.close();
-        try { fs.unlinkSync(resolved.absolute); } catch {}
-        return res.status(502).json({
-          success: false,
-          error: `Remote server returned ${response.statusCode}.`,
-        });
-      }
-
-      response.pipe(fileStream);
-      fileStream.on('finish', () => {
-        fileStream.close();
-        const stat = fs.statSync(resolved.absolute);
-        const haUrl = getHaUrl(resolved.root, resolved.rootRelative);
-
-        res.json({
-          success: true,
-          fetched: {
-            name: path.basename(resolved.absolute),
-            path: resolved.relative,
-            size: stat.size,
-            size_formatted: formatBytes(stat.size),
-            source_url: url,
-            ha_url: haUrl,
-          },
-        });
+      uploaded.push({
+        name: filename,
+        path: itemVirtual,
+        fs_path: destPath,
+        size: stat.size,
+        size_formatted: formatBytes(stat.size),
+        ha_url: haUrl,
       });
-    }).on('error', (err) => {
-      fileStream.close();
-      try { fs.unlinkSync(resolved.absolute); } catch {}
-      res.status(502).json({ success: false, error: `Fetch failed: ${err.message}` });
-    });
-  };
+    } catch (err) {
+      try { fs.unlinkSync(f.path); } catch {}
+      errors.push({ file: filename, error: err.message });
+    }
+  }
 
-  fetchUrl(url);
+  if (uploaded.length === 0 && errors.length > 0) {
+    return res.status(500).json({ success: false, error: 'All file uploads failed.', errors });
+  }
+
+  res.json({ success: true, uploaded, errors, count: uploaded.length });
 });
 
 // ---------------------------------------------------------------------------
 // API: POST /api/mkdir
 // ---------------------------------------------------------------------------
 app.post('/api/mkdir', (req, res) => {
-  const parentPath = req.body.path || '';
-  const dirname = (req.body.name || '').trim();
+  const parentPath = (req.body.path || '').toString().trim();
+  const dirname = (req.body.name || '').toString().trim();
 
   if (!dirname) {
     return res.status(400).json({ success: false, error: 'Directory name is required.' });
@@ -666,32 +656,18 @@ app.post('/api/mkdir', (req, res) => {
     return res.status(400).json({ success: false, error: 'Directory name contains invalid characters.' });
   }
 
-  const newPath = parentPath ? `${parentPath}/${dirname}` : dirname;
-  // For mkdir at root level (parentPath is empty), dirname should be within an existing root
-  // For mkdir inside a root, resolve normally
+  const targetVirtual = parentPath ? `${parentPath}/${dirname}` : dirname;
+  const resolved = resolvePath(targetVirtual, false);
 
-  // If parentPath is empty, the dirname must be within an existing writable root
-  // e.g., parentPath="" dirname="www/new-folder" → resolve "www/new-folder"
-  // or parentPath="www" dirname="new-folder" → resolve "www/new-folder"
-
-  const virtualPath = parentPath ? `${parentPath}/${dirname}` : `${dirname}`;
-
-  // Check: if we're creating inside a root, resolve parent
-  const parentResolved = resolvePath(parentPath || dirname.split('/')[0], true);
-  if (!parentResolved) {
-    return res.status(404).json({ success: false, error: 'Parent directory not found.' });
-  }
-  if (!parentResolved.root.writable) {
-    return res.status(403).json({ success: false, error: `Path "${parentResolved.root.name}" is read-only.` });
-  }
-
-  const resolved = resolvePath(virtualPath, false);
   if (!resolved) {
-    return res.status(400).json({ success: false, error: 'Invalid path.' });
+    return res.status(400).json({ success: false, error: 'Invalid directory path.' });
+  }
+  if (!resolved.root.writable) {
+    return res.status(403).json({ success: false, error: `Path "${resolved.root.name}" is read-only.` });
   }
 
   if (fs.existsSync(resolved.absolute)) {
-    return res.status(409).json({ success: false, error: 'Directory already exists.' });
+    return res.status(409).json({ success: false, error: 'A file or directory with that name already exists.' });
   }
 
   try {
@@ -732,7 +708,6 @@ app.post('/api/delete', (req, res) => {
       errors.push({ path: p, error: `Path "${resolved.root.name}" is read-only.` });
       continue;
     }
-    // Don't allow deleting a root directory itself
     if (resolved.rootRelative === '') {
       errors.push({ path: p, error: 'Cannot delete a root directory.' });
       continue;
@@ -787,7 +762,6 @@ app.post('/api/rename', (req, res) => {
 
   try {
     fs.renameSync(resolved.absolute, newTarget);
-
     const oldParts = resolved.relative.split('/');
     oldParts[oldParts.length - 1] = newName;
     const newRelPath = oldParts.join('/');
@@ -835,10 +809,317 @@ app.get('/api/download', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Federation Management Endpoints
+// ---------------------------------------------------------------------------
+
+// List API Keys
+app.get('/api/federation/keys', (req, res) => {
+  const data = loadFederationData();
+  const safeKeys = data.api_keys.map(k => ({
+    id: k.id,
+    name: k.name,
+    created_at: k.created_at,
+    key_preview: k.key ? `${k.key.slice(0, 12)}...${k.key.slice(-4)}` : '',
+  }));
+  res.json({ success: true, keys: safeKeys });
+});
+
+// Generate new API Key
+app.post('/api/federation/keys', (req, res) => {
+  const name = (req.body.name || 'Remote Client').toString().trim();
+  const data = loadFederationData();
+  const newKey = {
+    id: 'key_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'),
+    name,
+    key: generateSecretKey(),
+    created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+  };
+  data.api_keys.push(newKey);
+  saveFederationData(data);
+
+  res.json({
+    success: true,
+    message: 'API Key generated successfully. Save this secret token now; it will not be displayed in full again.',
+    key: newKey
+  });
+});
+
+// Revoke API Key
+app.delete('/api/federation/keys/:id', (req, res) => {
+  const { id } = req.params;
+  const data = loadFederationData();
+  const prevLen = data.api_keys.length;
+  data.api_keys = data.api_keys.filter(k => k.id !== id);
+  if (data.api_keys.length === prevLen) {
+    return res.status(404).json({ success: false, error: 'Key not found.' });
+  }
+  saveFederationData(data);
+  res.json({ success: true, message: 'Key revoked successfully.' });
+});
+
+// List Configured Remote Servers
+app.get('/api/federation/servers', (req, res) => {
+  const data = loadFederationData();
+  const safeServers = data.servers.map(s => ({
+    id: s.id,
+    display_name: s.display_name,
+    url: s.url,
+    server_type: s.server_type || 'express',
+    has_api_key: Boolean(s.api_key),
+    has_cf_headers: Boolean(s.cf_client_id && s.cf_client_secret),
+    created_at: s.created_at,
+  }));
+  res.json({ success: true, servers: safeServers });
+});
+
+// Test Connection Helper
+async function testServerConnection(url, apiKey, cfId, cfSecret) {
+  const cleanUrl = url.replace(/\/+$/, '');
+  const headers = {};
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+    headers['X-Artifactory-Key'] = apiKey;
+  }
+  if (cfId) headers['CF-Access-Client-Id'] = cfId;
+  if (cfSecret) headers['CF-Access-Client-Secret'] = cfSecret;
+
+  // Try Express endpoint first
+  const tryFetch = (targetUrl) => new Promise((resolve, reject) => {
+    const isHttps = targetUrl.startsWith('https:');
+    const client = isHttps ? https : http;
+    const req = client.get(targetUrl, { headers, timeout: 8000 }, (resp) => {
+      let raw = '';
+      resp.on('data', chunk => raw += chunk);
+      resp.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          resolve({ status: resp.statusCode, data: json });
+        } catch {
+          resolve({ status: resp.statusCode, data: null, rawText: raw });
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Connection timed out')); });
+  });
+
+  // Try /api/info
+  try {
+    const res1 = await tryFetch(`${cleanUrl}/api/info`);
+    if (res1.status >= 200 && res1.status < 300 && res1.data && res1.data.success) {
+      return { ok: true, server_type: 'express', server_info: res1.data.server || {} };
+    }
+  } catch {}
+
+  // Try Synology api.php?action=info
+  try {
+    const targetPhp = cleanUrl.endsWith('api.php') ? `${cleanUrl}?action=info` : `${cleanUrl}/api.php?action=info`;
+    const res2 = await tryFetch(targetPhp);
+    if (res2.status >= 200 && res2.status < 300 && res2.data && res2.data.success) {
+      return { ok: true, server_type: 'php', server_info: res2.data.server || {} };
+    }
+  } catch (err) {
+    throw new Error(`Failed to connect to remote server: ${err.message}`);
+  }
+
+  throw new Error('Remote server responded, but Artifactory API info endpoint was not recognized.');
+}
+
+// Test server connectivity endpoint
+app.post('/api/federation/servers/test', async (req, res) => {
+  const { url, api_key, cf_client_id, cf_client_secret } = req.body || {};
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'Server URL is required.' });
+  }
+
+  try {
+    const result = await testServerConnection(url, api_key, cf_client_id, cf_client_secret);
+    res.json({
+      success: true,
+      message: 'Connection successful!',
+      server_type: result.server_type,
+      server_info: result.server_info
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Add / Update Remote Server
+app.post('/api/federation/servers', async (req, res) => {
+  const { display_name, url, api_key, cf_client_id, cf_client_secret } = req.body || {};
+  if (!display_name || !url) {
+    return res.status(400).json({ success: false, error: 'display_name and url are required.' });
+  }
+
+  let serverType = 'express';
+  try {
+    const testRes = await testServerConnection(url, api_key, cf_client_id, cf_client_secret);
+    serverType = testRes.server_type || 'express';
+  } catch (err) {
+    console.warn('[Federation] Adding server with warning:', err.message);
+  }
+
+  const data = loadFederationData();
+  const cleanUrl = url.replace(/\/+$/, '');
+  const serverId = 'srv_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex');
+
+  const newServer = {
+    id: serverId,
+    display_name: display_name.trim(),
+    url: cleanUrl,
+    api_key: (api_key || '').trim(),
+    cf_client_id: (cf_client_id || '').trim(),
+    cf_client_secret: (cf_client_secret || '').trim(),
+    server_type: serverType,
+    created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+  };
+
+  data.servers.push(newServer);
+  saveFederationData(data);
+
+  res.json({
+    success: true,
+    message: `Remote server "${newServer.display_name}" added successfully!`,
+    server: {
+      id: newServer.id,
+      display_name: newServer.display_name,
+      url: newServer.url,
+      server_type: newServer.server_type,
+      created_at: newServer.created_at
+    }
+  });
+});
+
+// Delete Remote Server
+app.delete('/api/federation/servers/:id', (req, res) => {
+  const { id } = req.params;
+  const data = loadFederationData();
+  const prevLen = data.servers.length;
+  data.servers = data.servers.filter(s => s.id !== id);
+  if (data.servers.length === prevLen) {
+    return res.status(404).json({ success: false, error: 'Server not found.' });
+  }
+  saveFederationData(data);
+  res.json({ success: true, message: 'Remote server removed successfully.' });
+});
+
+// ---------------------------------------------------------------------------
+// Remote Proxy Forwarder with Dynamic LLM Transparency
+// ---------------------------------------------------------------------------
+
+function augmentRemoteResponse(remoteData, server, localHostName) {
+  if (!remoteData || typeof remoteData !== 'object') return remoteData;
+
+  const serverName = server.display_name || server.url;
+  const hubName = localHostName || 'Local Artifactory Hub';
+
+  return {
+    ...remoteData,
+    _artifactory_node: {
+      server_id: server.id,
+      display_name: server.display_name,
+      url: server.url,
+      is_local: false,
+    },
+    llm_context: {
+      node_type: 'REMOTE_FEDERATED_SERVER',
+      connected_hub: hubName,
+      target_server_name: server.display_name,
+      target_server_url: server.url,
+      warning_for_llm: `ATTENTION AI AGENT: You are accessing files on the REMOTE server '${serverName}' via the proxy on '${hubName}'. Any file operations (upload, edit, save, delete, rename) will execute on the remote machine '${serverName}' (${server.url}), NOT the local server.`,
+    }
+  };
+}
+
+app.all('/api/remote/:serverId/:subAction(*)', (req, res) => {
+  const { serverId, subAction } = req.params;
+  const data = loadFederationData();
+  const server = data.servers.find(s => s.id === serverId);
+
+  if (!server) {
+    return res.status(404).json({ success: false, error: `Remote server ID "${serverId}" not found.` });
+  }
+
+  const isPhp = server.server_type === 'php' || server.url.endsWith('.php');
+  const targetBase = server.url.replace(/\/+$/, '');
+  let targetUrlStr = '';
+
+  const queryParams = new URLSearchParams(req.query);
+
+  if (isPhp) {
+    const action = subAction.replace(/^\/+/, '').split('/')[0] || 'list';
+    queryParams.set('action', action);
+    const phpFile = targetBase.endsWith('api.php') ? targetBase : `${targetBase}/api.php`;
+    targetUrlStr = `${phpFile}?${queryParams.toString()}`;
+  } else {
+    const cleanSub = subAction.replace(/^\/+/, '');
+    targetUrlStr = `${targetBase}/api/${cleanSub}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+  }
+
+  const parsedUrl = new URL(targetUrlStr);
+  const isHttps = parsedUrl.protocol === 'https:';
+  const client = isHttps ? https : http;
+
+  const headers = { ...req.headers };
+  delete headers.host;
+  delete headers['x-ingress-path'];
+
+  if (server.api_key) {
+    headers['authorization'] = `Bearer ${server.api_key}`;
+    headers['x-artifactory-key'] = server.api_key;
+  }
+  if (server.cf_client_id) headers['cf-access-client-id'] = server.cf_client_id;
+  if (server.cf_client_secret) headers['cf-access-client-secret'] = server.cf_client_secret;
+
+  const proxyReq = client.request(parsedUrl, {
+    method: req.method,
+    headers,
+    timeout: 30000,
+  }, (remoteRes) => {
+    const contentType = remoteRes.headers['content-type'] || '';
+
+    if (contentType.includes('application/json')) {
+      let raw = '';
+      remoteRes.on('data', chunk => raw += chunk);
+      remoteRes.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          const augmented = augmentRemoteResponse(json, server, getLocalNodeName());
+          res.status(remoteRes.statusCode).json(augmented);
+        } catch {
+          res.status(remoteRes.statusCode).send(raw);
+        }
+      });
+    } else {
+      // Pipe stream directly for downloads, previews, media
+      res.status(remoteRes.statusCode);
+      Object.keys(remoteRes.headers).forEach(k => {
+        res.setHeader(k, remoteRes.headers[k]);
+      });
+      remoteRes.pipe(res);
+    }
+  });
+
+  proxyReq.on('error', (err) => {
+    res.status(502).json({
+      success: false,
+      error: `Proxy error communicating with remote server "${server.display_name}": ${err.message}`,
+      target_url: targetUrlStr
+    });
+  });
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    req.pipe(proxyReq);
+  } else {
+    proxyReq.end();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Fallback: serve index.html for SPA
 // ---------------------------------------------------------------------------
 app.get('*', (req, res) => {
-  // Only serve index.html for non-API routes
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ success: false, error: 'Unknown API endpoint.' });
   }
@@ -849,6 +1130,6 @@ app.get('*', (req, res) => {
 // Start server
 // ---------------------------------------------------------------------------
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Artifactory] Server listening on port ${PORT}`);
+  console.log(`[Artifactory v${APP_VERSION}] Server listening on port ${PORT}`);
   console.log(`[Artifactory] ${ROOTS.size} root(s) configured`);
 });

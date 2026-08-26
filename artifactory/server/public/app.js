@@ -1,17 +1,15 @@
 /**
  * Artifactory — Home Assistant Add-on
- * Client-side Controller & UI Logic
+ * Client-side Controller & UI Logic with Multi-Node Federation
  *
  * Zero external dependencies, pure vanilla JS.
- * Ingress-compatible with dynamic path resolution.
- * Supports Browser History (Back/Forward), Access Badges (Read/Write),
- * In-Browser Text File Editor, and Graceful Error Handling.
+ * Supports Browser History (Back/Forward), In-Browser Text File Editor,
+ * Multi-Server Federation (Remote Node Explorer), and Graceful Error Handling.
  */
 
 (function () {
   'use strict';
 
-  // Base path resolution for Home Assistant Ingress
   function getBasePath() {
     if (window.__ingress_path) {
       return window.__ingress_path.replace(/\/+$/, '');
@@ -24,19 +22,27 @@
     return pathname.replace(/\/[^/]*$/, '').replace(/\/+$/, '');
   }
 
-  function getPathFromHash() {
+  function parseHash() {
     const hash = window.location.hash || '';
+    if (hash.startsWith('#@')) {
+      const parts = hash.slice(2).split('/');
+      const serverId = decodeURIComponent(parts[0]);
+      const path = parts.slice(1).join('/');
+      return { serverId, path: decodeURIComponent(path) };
+    }
     if (hash.startsWith('#/')) {
-      return decodeURIComponent(hash.slice(2));
+      return { serverId: 'local', path: decodeURIComponent(hash.slice(2)) };
     }
     if (hash.startsWith('#') && hash.length > 1) {
-      return decodeURIComponent(hash.slice(1));
+      return { serverId: 'local', path: decodeURIComponent(hash.slice(1)) };
     }
-    return '';
+    return { serverId: 'local', path: '' };
   }
 
   // Application State
   const state = {
+    activeServerId: 'local',
+    remoteServers: [],
     currentPath: '',
     items: [],
     breadcrumbs: [{ name: 'Root', path: '' }],
@@ -59,6 +65,13 @@
   const el = {
     app: document.getElementById('app'),
     hostBadge: document.getElementById('hostBadge'),
+    serverSelect: document.getElementById('serverSelect'),
+    serversManagerBtn: document.getElementById('serversManagerBtn'),
+    keysManagerBtn: document.getElementById('keysManagerBtn'),
+    remoteServerBanner: document.getElementById('remoteServerBanner'),
+    remoteServerBannerName: document.getElementById('remoteServerBannerName'),
+    remoteServerBannerUrl: document.getElementById('remoteServerBannerUrl'),
+    exitRemoteServerBtn: document.getElementById('exitRemoteServerBtn'),
     searchInput: document.getElementById('searchInput'),
     clearSearchBtn: document.getElementById('clearSearchBtn'),
     uploadBtn: document.getElementById('uploadBtn'),
@@ -85,7 +98,6 @@
     emptyState: document.getElementById('emptyState'),
     itemsSummary: document.getElementById('itemsSummary'),
     storageInfo: document.getElementById('storageInfo'),
-    uploadLimitInfo: document.getElementById('uploadLimitInfo'),
     // Preview & Editor Modal
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
@@ -102,6 +114,27 @@
     previewEditBtnText: document.getElementById('previewEditBtnText'),
     previewSaveBtn: document.getElementById('previewSaveBtn'),
     closePreviewModalBtn: document.getElementById('closePreviewModalBtn'),
+    // Remote Servers Modal
+    serversModal: document.getElementById('serversModal'),
+    closeServersModalBtn: document.getElementById('closeServersModalBtn'),
+    serversListContainer: document.getElementById('serversListContainer'),
+    addServerForm: document.getElementById('addServerForm'),
+    serverDisplayNameInput: document.getElementById('serverDisplayNameInput'),
+    serverUrlInput: document.getElementById('serverUrlInput'),
+    serverApiKeyInput: document.getElementById('serverApiKeyInput'),
+    cfClientIdInput: document.getElementById('cfClientIdInput'),
+    cfClientSecretInput: document.getElementById('cfClientSecretInput'),
+    testServerBtn: document.getElementById('testServerBtn'),
+    submitServerBtn: document.getElementById('submitServerBtn'),
+    // API Keys Modal
+    keysModal: document.getElementById('keysModal'),
+    closeKeysModalBtn: document.getElementById('closeKeysModalBtn'),
+    keysListContainer: document.getElementById('keysListContainer'),
+    generateKeyForm: document.getElementById('generateKeyForm'),
+    keyNameInput: document.getElementById('keyNameInput'),
+    newKeyAlertBox: document.getElementById('newKeyAlertBox'),
+    newKeyDisplayInput: document.getElementById('newKeyDisplayInput'),
+    copyNewKeyBtn: document.getElementById('copyNewKeyBtn'),
     // New Folder Modal
     newFolderModal: document.getElementById('newFolderModal'),
     newFolderForm: document.getElementById('newFolderForm'),
@@ -124,11 +157,19 @@
     toastContainer: document.getElementById('toastContainer')
   };
 
-  // API Client Helper
+  // API Client Helper (handles Local and Remote Server Proxy)
   function getApiUrl(endpoint, params = {}) {
     const base = getBasePath();
-    const ep = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    const url = new URL(`${base}/api${ep}`, window.location.origin);
+    const ep = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+
+    let urlPath = '';
+    if (state.activeServerId === 'local') {
+      urlPath = `${base}/api/${ep}`;
+    } else {
+      urlPath = `${base}/api/remote/${encodeURIComponent(state.activeServerId)}/${ep}`;
+    }
+
+    const url = new URL(urlPath, window.location.origin);
     Object.keys(params).forEach(k => {
       if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
         url.searchParams.set(k, params[k]);
@@ -239,7 +280,7 @@
       'txt', 'md', 'json', 'yaml', 'yml', 'css', 'scss', 'js', 'ts', 'jsx', 'tsx',
       'html', 'htm', 'py', 'sh', 'bash', 'pem', 'key', 'crt', 'cert', 'csr', 'pub',
       'xml', 'svg', 'conf', 'ini', 'cfg', 'env', 'sql', 'csv', 'tsv', 'log', 'toml',
-      'dockerfile', 'gitignore'
+      'dockerfile', 'gitignore', 'php'
     ];
     return textExts.includes(ext) || mime.startsWith('text/') || mime === 'application/json' || mime === 'application/yaml' || mime === 'application/javascript' || mime === 'image/svg+xml';
   }
@@ -275,9 +316,8 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>';
   }
 
-  // Access Badge (Eye for Read-Only, Pencil for Write)
   function getAccessBadgeHtml(item) {
-    const isWritable = item.writable === true;
+    const isWritable = item.writable === true || (item.writable === undefined && !item.is_protected);
     if (isWritable) {
       return `
         <span class="access-badge badge-write" title="Write access (Upload, Edit, Delete)">
@@ -295,7 +335,7 @@
   }
 
   function getAccessPillHtml(item) {
-    const isWritable = item.writable === true;
+    const isWritable = item.writable === true || (item.writable === undefined && !item.is_protected);
     if (isWritable) {
       return `
         <span class="access-pill pill-write" title="Write access (Upload, Edit, Delete)">
@@ -317,11 +357,15 @@
     path = (path || '').replace(/^\/+/, '').replace(/\/+$/, '');
     state.currentPath = path;
 
-    // Push to browser history so Back/Forward buttons navigate within Artifactory
     if (pushHistory) {
-      const newHash = path ? `#/${path}` : '#';
+      let newHash = '';
+      if (state.activeServerId === 'local') {
+        newHash = path ? `#/${path}` : '#';
+      } else {
+        newHash = path ? `#@${state.activeServerId}/${path}` : `#@${state.activeServerId}`;
+      }
       if (window.location.hash !== newHash) {
-        history.pushState({ path }, '', newHash);
+        history.pushState({ serverId: state.activeServerId, path }, '', newHash);
       }
     }
 
@@ -334,10 +378,10 @@
       state.items = data.items || [];
       state.breadcrumbs = data.breadcrumbs || [{ name: 'Root', path: '' }];
 
-      if (!state.currentPath) {
+      if (!state.currentPath && state.activeServerId === 'local') {
         state.isReadOnly = true;
       } else if (state.items.length > 0) {
-        state.isReadOnly = !state.items[0].writable;
+        state.isReadOnly = state.items[0].writable === false || state.items[0].is_protected;
       } else if (data.writable !== undefined) {
         state.isReadOnly = !data.writable;
       } else {
@@ -350,7 +394,6 @@
     } catch (err) {
       showToast(err.message, 'error');
 
-      // Fallback breadcrumbs so user is NEVER stuck and can always click Root or parent
       if (!state.breadcrumbs || state.breadcrumbs.length === 0 || state.breadcrumbs[state.breadcrumbs.length - 1].path !== path) {
         const parts = path.split('/').filter(Boolean);
         const fallbackBcs = [{ name: 'Root', path: '' }];
@@ -368,7 +411,7 @@
     }
   }
 
-  // Render Error State with Go Back / Return to Root button
+  // Render Error State
   function renderErrorState(errorMessage) {
     if (!el.filesContainer) return;
     el.filesContainer.innerHTML = `
@@ -412,7 +455,7 @@
         }
       }
       if (el.hostBadge && data.server) {
-        el.hostBadge.textContent = `${data.server.name} v${data.server.version}`;
+        el.hostBadge.textContent = `${data.server.name || 'Artifactory'} v${data.server.version || '1.1.0'}`;
       }
     } catch (err) {
       console.warn('Could not load server info:', err);
@@ -421,7 +464,7 @@
 
   // Update Action Buttons
   function updateActionButtons() {
-    const isRoot = !state.currentPath;
+    const isRoot = !state.currentPath && state.activeServerId === 'local';
     const canWrite = !state.isReadOnly && !isRoot;
 
     if (el.newFolderBtn) {
@@ -490,7 +533,7 @@
     return list;
   }
 
-  // Render Items (Grid or List)
+  // Render Items
   function renderItems(customMessage = null) {
     if (!el.filesContainer) return;
     const items = getProcessedItems();
@@ -505,13 +548,8 @@
     if (items.length === 0) {
       if (el.emptyState) {
         el.emptyState.style.display = 'flex';
-        if (customMessage) {
-          const p = el.emptyState.querySelector('p');
-          if (p) p.textContent = customMessage;
-        } else {
-          const p = el.emptyState.querySelector('p');
-          if (p) p.textContent = 'Drag and drop files here, or click the Upload button to host resources.';
-        }
+        const p = el.emptyState.querySelector('p');
+        if (p) p.textContent = customMessage || 'Drag and drop files here, or click the Upload button to host resources.';
       }
       el.filesContainer.style.display = 'none';
       return;
@@ -534,7 +572,7 @@
       const isDir = item.type === 'dir' || item.type === 'directory';
       const card = document.createElement('div');
       card.className = 'file-card';
-      card.title = item.fs_path || item.name;
+      card.title = item.fs_path || item.path || item.name;
 
       const isImage = !isDir && (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(item.ext) || (item.mime && item.mime.startsWith('image/')));
       let previewHtml = '';
@@ -547,7 +585,8 @@
         previewHtml = `<div class="file-card-preview"><div class="file-card-icon ${isDir ? 'folder-icon' : ''}">${getFileIconSvg(item)}</div></div>`;
       }
 
-      const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+      const isRoot = !state.currentPath && state.activeServerId === 'local';
+      const canWrite = !isRoot && item.writable !== false && !item.is_protected && !state.isReadOnly;
       const canEdit = !isDir && isTextFile(item) && canWrite;
       const badgeHtml = getAccessBadgeHtml(item);
 
@@ -564,8 +603,8 @@
           </div>
         </div>
         <div class="file-card-actions">
-          ${item.ha_url ? `
-          <button class="btn-icon small copy-ha-btn" title="Copy HA URL (${item.ha_url})">
+          ${(item.ha_url || item.url) ? `
+          <button class="btn-icon small copy-ha-btn" title="Copy Direct Link">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </button>` : ''}
           ${canEdit ? `
@@ -586,7 +625,6 @@
         </div>
       `;
 
-      // Click card to open folder or preview file
       card.addEventListener('click', (e) => {
         if (e.target.closest('.file-card-actions') || e.target.closest('.access-badge')) return;
         if (isDir) {
@@ -596,11 +634,11 @@
         }
       });
 
-      // Action Handlers
       const copyHaBtn = card.querySelector('.copy-ha-btn');
       if (copyHaBtn) copyHaBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        copyToClipboard(item.ha_url, `HA URL copied: "${item.ha_url}"`);
+        const link = item.ha_url || item.url || getApiUrl('download', { path: item.path });
+        copyToClipboard(link, `Direct link copied: "${link}"`);
       });
 
       const editFileBtn = card.querySelector('.edit-file-btn');
@@ -653,7 +691,8 @@
     items.forEach(item => {
       const isDir = item.type === 'dir' || item.type === 'directory';
       const tr = document.createElement('tr');
-      const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+      const isRoot = !state.currentPath && state.activeServerId === 'local';
+      const canWrite = !isRoot && item.writable !== false && !item.is_protected && !state.isReadOnly;
       const canEdit = !isDir && isTextFile(item) && canWrite;
       const accessPill = getAccessPillHtml(item);
 
@@ -672,8 +711,8 @@
         <td>${item.mtime_formatted || '-'}</td>
         <td class="list-actions-cell">
           <div class="btn-group">
-            ${item.ha_url ? `
-            <button class="btn-icon small copy-ha-btn" title="Copy HA URL (${item.ha_url})">
+            ${(item.ha_url || item.url) ? `
+            <button class="btn-icon small copy-ha-btn" title="Copy Direct Link">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
             </button>` : ''}
             ${canEdit ? `
@@ -707,7 +746,8 @@
       const copyHaBtn = tr.querySelector('.copy-ha-btn');
       if (copyHaBtn) copyHaBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        copyToClipboard(item.ha_url, `HA URL copied: "${item.ha_url}"`);
+        const link = item.ha_url || item.url || getApiUrl('download', { path: item.path });
+        copyToClipboard(link, `Direct link copied: "${link}"`);
       });
 
       const editFileBtn = tr.querySelector('.edit-file-btn');
@@ -737,7 +777,6 @@
       tbody.appendChild(tr);
     });
 
-    // Column Header Sorting
     table.querySelectorAll('th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
         const key = th.getAttribute('data-sort');
@@ -889,7 +928,6 @@
         if (el.previewMtime) el.previewMtime.textContent = `Date: ${res.file.mtime_formatted}`;
       }
 
-      // Refresh directory list quietly in background
       loadDirectory(state.currentPath, false);
     } catch (err) {
       showToast(`Failed to save file: ${err.message}`, 'error');
@@ -921,16 +959,16 @@
     el.previewMtime.textContent = `Date: ${item.mtime_formatted || '-'}`;
     el.previewMime.textContent = `MIME: ${item.mime || 'unknown'}`;
 
-    const haUrl = item.ha_url || getApiUrl('download', { path: item.path });
+    const haUrl = item.ha_url || item.url || getApiUrl('download', { path: item.path });
     el.previewDirectLinkInput.value = haUrl;
 
     const previewUrl = getApiUrl('download', { path: item.path, inline: 'true' });
     const ext = (item.ext || '').toLowerCase();
     const mime = item.mime || '';
     const isText = isTextFile(item);
-    const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+    const isRoot = !state.currentPath && state.activeServerId === 'local';
+    const canWrite = !isRoot && item.writable !== false && !item.is_protected && !state.isReadOnly;
 
-    // Configure Edit & Save buttons
     if (isText) {
       if (el.previewEditBtn) {
         el.previewEditBtn.style.display = 'inline-flex';
@@ -991,7 +1029,7 @@
   // Upload Management
   async function handleFilesUpload(files) {
     if (!files || files.length === 0) return;
-    if (!state.currentPath || state.isReadOnly) {
+    if ((!state.currentPath && state.activeServerId === 'local') || state.isReadOnly) {
       showToast('Cannot upload to this directory', 'error');
       return;
     }
@@ -1062,9 +1100,201 @@
     }
   }
 
+  // Federation & Server Selector
+  async function loadFederationServers() {
+    try {
+      const base = getBasePath();
+      const res = await fetch(`${base}/api/federation/servers`);
+      const data = await res.json();
+      if (data && data.servers) {
+        state.remoteServers = data.servers;
+        renderServerSelectOptions();
+      }
+    } catch (err) {
+      console.warn('Could not load federation servers:', err);
+    }
+  }
+
+  function renderServerSelectOptions() {
+    if (!el.serverSelect) return;
+    el.serverSelect.innerHTML = '<option value="local">📍 Local Server</option>';
+    state.remoteServers.forEach(srv => {
+      const opt = document.createElement('option');
+      opt.value = srv.id;
+      opt.textContent = `🌐 ${srv.display_name}`;
+      el.serverSelect.appendChild(opt);
+    });
+    el.serverSelect.value = state.activeServerId;
+  }
+
+  function setActiveServer(serverId) {
+    state.activeServerId = serverId;
+    if (el.serverSelect) el.serverSelect.value = serverId;
+
+    if (serverId === 'local') {
+      if (el.remoteServerBanner) el.remoteServerBanner.style.display = 'none';
+      loadDirectory('', true);
+    } else {
+      const srv = state.remoteServers.find(s => s.id === serverId);
+      if (srv) {
+        if (el.remoteServerBanner) {
+          el.remoteServerBanner.style.display = 'flex';
+          if (el.remoteServerBannerName) el.remoteServerBannerName.textContent = srv.display_name;
+          if (el.remoteServerBannerUrl) el.remoteServerBannerUrl.textContent = srv.url;
+        }
+      }
+      loadDirectory('', true);
+    }
+  }
+
+  // Modals: Servers Management
+  async function openServersModal() {
+    if (!el.serversModal) return;
+    el.serversModal.style.display = 'flex';
+    loadServersModalList();
+  }
+
+  function closeServersModal() {
+    if (el.serversModal) el.serversModal.style.display = 'none';
+  }
+
+  async function loadServersModalList() {
+    if (!el.serversListContainer) return;
+    el.serversListContainer.innerHTML = '<div class="spinner"></div>';
+    try {
+      const base = getBasePath();
+      const res = await fetch(`${base}/api/federation/servers`);
+      const data = await res.json();
+      state.remoteServers = data.servers || [];
+      renderServerSelectOptions();
+
+      if (state.remoteServers.length === 0) {
+        el.serversListContainer.innerHTML = '<p class="fed-empty">No remote servers added yet.</p>';
+        return;
+      }
+
+      el.serversListContainer.innerHTML = '';
+      state.remoteServers.forEach(srv => {
+        const card = document.createElement('div');
+        card.className = 'fed-item-card';
+        card.innerHTML = `
+          <div class="fed-item-info">
+            <span class="fed-item-name">🌐 ${escapeHtml(srv.display_name)}</span>
+            <span class="fed-item-sub">${escapeHtml(srv.url)}</span>
+          </div>
+          <div class="fed-item-actions">
+            <button class="btn btn-secondary small test-btn">Test</button>
+            <button class="btn-icon small delete-btn" title="Remove server">&times;</button>
+          </div>
+        `;
+
+        card.querySelector('.test-btn').addEventListener('click', async () => {
+          showToast(`Testing connection to ${srv.display_name}...`, 'info');
+          try {
+            const tRes = await fetch(`${base}/api/federation/servers/test`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: srv.url })
+            });
+            const tData = await tRes.json();
+            if (tData.success) {
+              showToast(`Connected to ${srv.display_name} successfully!`, 'success');
+            } else {
+              showToast(`Connection failed: ${tData.error}`, 'error');
+            }
+          } catch (e) {
+            showToast(`Connection error: ${e.message}`, 'error');
+          }
+        });
+
+        card.querySelector('.delete-btn').addEventListener('click', async () => {
+          if (!confirm(`Remove server "${srv.display_name}"?`)) return;
+          try {
+            const delRes = await fetch(`${base}/api/federation/servers/${srv.id}`, { method: 'DELETE' });
+            const delData = await delRes.json();
+            if (delData.success) {
+              showToast('Server removed', 'success');
+              if (state.activeServerId === srv.id) {
+                setActiveServer('local');
+              }
+              loadServersModalList();
+            }
+          } catch (e) {
+            showToast(e.message, 'error');
+          }
+        });
+
+        el.serversListContainer.appendChild(card);
+      });
+    } catch (err) {
+      el.serversListContainer.innerHTML = `<p class="warning-text">${err.message}</p>`;
+    }
+  }
+
+  // Modals: API Keys Management
+  async function openKeysModal() {
+    if (!el.keysModal) return;
+    if (el.newKeyAlertBox) el.newKeyAlertBox.style.display = 'none';
+    el.keysModal.style.display = 'flex';
+    loadKeysModalList();
+  }
+
+  function closeKeysModal() {
+    if (el.keysModal) el.keysModal.style.display = 'none';
+  }
+
+  async function loadKeysModalList() {
+    if (!el.keysListContainer) return;
+    el.keysListContainer.innerHTML = '<div class="spinner"></div>';
+    try {
+      const base = getBasePath();
+      const res = await fetch(`${base}/api/federation/keys`);
+      const data = await res.json();
+      const keys = data.keys || [];
+
+      if (keys.length === 0) {
+        el.keysListContainer.innerHTML = '<p class="fed-empty">No API keys generated yet.</p>';
+        return;
+      }
+
+      el.keysListContainer.innerHTML = '';
+      keys.forEach(k => {
+        const card = document.createElement('div');
+        card.className = 'fed-item-card';
+        card.innerHTML = `
+          <div class="fed-item-info">
+            <span class="fed-item-name">🔑 ${escapeHtml(k.name)}</span>
+            <span class="fed-item-sub">${escapeHtml(k.key_preview)} &bull; Created ${k.created_at}</span>
+          </div>
+          <div class="fed-item-actions">
+            <button class="btn btn-danger small revoke-btn">Revoke</button>
+          </div>
+        `;
+
+        card.querySelector('.revoke-btn').addEventListener('click', async () => {
+          if (!confirm(`Revoke key for "${k.name}"? Remote clients using this key will immediately lose access.`)) return;
+          try {
+            const delRes = await fetch(`${base}/api/federation/keys/${k.id}`, { method: 'DELETE' });
+            const delData = await delRes.json();
+            if (delData.success) {
+              showToast('Key revoked', 'success');
+              loadKeysModalList();
+            }
+          } catch (e) {
+            showToast(e.message, 'error');
+          }
+        });
+
+        el.keysListContainer.appendChild(card);
+      });
+    } catch (err) {
+      el.keysListContainer.innerHTML = `<p class="warning-text">${err.message}</p>`;
+    }
+  }
+
   // Modals Management
   function openNewFolderModal() {
-    if (!state.currentPath || state.isReadOnly) return;
+    if ((!state.currentPath && state.activeServerId === 'local') || state.isReadOnly) return;
     el.newFolderNameInput.value = '';
     el.newFolderModal.style.display = 'flex';
     el.newFolderNameInput.focus();
@@ -1099,6 +1329,156 @@
 
   // Event Listeners Registration
   function setupEventListeners() {
+    // Server Selector Dropdown
+    if (el.serverSelect) {
+      el.serverSelect.addEventListener('change', (e) => {
+        setActiveServer(e.target.value);
+      });
+    }
+
+    if (el.exitRemoteServerBtn) {
+      el.exitRemoteServerBtn.addEventListener('click', () => {
+        setActiveServer('local');
+      });
+    }
+
+    // Servers Modal Open/Close
+    if (el.serversManagerBtn) el.serversManagerBtn.addEventListener('click', openServersModal);
+    if (el.closeServersModalBtn) el.closeServersModalBtn.addEventListener('click', closeServersModal);
+
+    // Test Server Button
+    if (el.testServerBtn) {
+      el.testServerBtn.addEventListener('click', async () => {
+        const url = el.serverUrlInput.value.trim();
+        const apiKey = el.serverApiKeyInput.value.trim();
+        const cfId = el.cfClientIdInput ? el.cfClientIdInput.value.trim() : '';
+        const cfSecret = el.cfClientSecretInput ? el.cfClientSecretInput.value.trim() : '';
+
+        if (!url) {
+          showToast('Please enter a server URL', 'error');
+          return;
+        }
+
+        el.testServerBtn.disabled = true;
+        el.testServerBtn.textContent = 'Testing...';
+
+        try {
+          const base = getBasePath();
+          const res = await fetch(`${base}/api/federation/servers/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, api_key: apiKey, cf_client_id: cfId, cf_client_secret: cfSecret })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showToast('Connection verified successfully!', 'success');
+          } else {
+            showToast(`Connection test failed: ${data.error}`, 'error');
+          }
+        } catch (err) {
+          showToast(`Test error: ${err.message}`, 'error');
+        } finally {
+          el.testServerBtn.disabled = false;
+          el.testServerBtn.textContent = 'Test Connection';
+        }
+      });
+    }
+
+    // Add Server Form
+    if (el.addServerForm) {
+      el.addServerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const displayName = el.serverDisplayNameInput.value.trim();
+        const url = el.serverUrlInput.value.trim();
+        const apiKey = el.serverApiKeyInput.value.trim();
+        const cfId = el.cfClientIdInput ? el.cfClientIdInput.value.trim() : '';
+        const cfSecret = el.cfClientSecretInput ? el.cfClientSecretInput.value.trim() : '';
+
+        if (!displayName || !url) return;
+
+        if (el.submitServerBtn) {
+          el.submitServerBtn.disabled = true;
+          el.submitServerBtn.textContent = 'Adding...';
+        }
+
+        try {
+          const base = getBasePath();
+          const res = await fetch(`${base}/api/federation/servers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              display_name: displayName,
+              url,
+              api_key: apiKey,
+              cf_client_id: cfId,
+              cf_client_secret: cfSecret
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showToast(`Remote server "${displayName}" added!`, 'success');
+            el.serverDisplayNameInput.value = '';
+            el.serverUrlInput.value = '';
+            el.serverApiKeyInput.value = '';
+            if (el.cfClientIdInput) el.cfClientIdInput.value = '';
+            if (el.cfClientSecretInput) el.cfClientSecretInput.value = '';
+            loadServersModalList();
+          } else {
+            showToast(data.error || 'Failed to add server', 'error');
+          }
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          if (el.submitServerBtn) {
+            el.submitServerBtn.disabled = false;
+            el.submitServerBtn.textContent = 'Add Server';
+          }
+        }
+      });
+    }
+
+    // Keys Modal Open/Close
+    if (el.keysManagerBtn) el.keysManagerBtn.addEventListener('click', openKeysModal);
+    if (el.closeKeysModalBtn) el.closeKeysModalBtn.addEventListener('click', closeKeysModal);
+
+    // Generate Key Form
+    if (el.generateKeyForm) {
+      el.generateKeyForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = el.keyNameInput.value.trim();
+        if (!name) return;
+
+        try {
+          const base = getBasePath();
+          const res = await fetch(`${base}/api/federation/keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+          });
+          const data = await res.json();
+          if (data.success && data.key) {
+            showToast('API Key created!', 'success');
+            el.keyNameInput.value = '';
+            if (el.newKeyAlertBox && el.newKeyDisplayInput) {
+              el.newKeyDisplayInput.value = data.key.key;
+              el.newKeyAlertBox.style.display = 'block';
+            }
+            loadKeysModalList();
+          } else {
+            showToast(data.error || 'Failed to generate key', 'error');
+          }
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
+    if (el.copyNewKeyBtn && el.newKeyDisplayInput) {
+      el.copyNewKeyBtn.addEventListener('click', () => {
+        copyToClipboard(el.newKeyDisplayInput.value, 'API Key copied to clipboard');
+      });
+    }
+
     // Navigation Up Button
     if (el.navUpBtn) {
       el.navUpBtn.addEventListener('click', () => {
@@ -1180,7 +1560,7 @@
     // Upload Button & File Input
     if (el.uploadBtn && el.fileInput) {
       el.uploadBtn.addEventListener('click', () => {
-        if (!state.currentPath || state.isReadOnly) return;
+        if ((!state.currentPath && state.activeServerId === 'local') || state.isReadOnly) return;
         el.fileInput.click();
       });
 
@@ -1193,7 +1573,7 @@
     // Drag & Drop
     window.addEventListener('dragover', (e) => {
       e.preventDefault();
-      if (state.currentPath && !state.isReadOnly && el.dropOverlay) {
+      if ((state.currentPath || state.activeServerId !== 'local') && !state.isReadOnly && el.dropOverlay) {
         el.dropOverlay.classList.add('active');
       }
     });
@@ -1297,8 +1677,8 @@
     if (el.previewCopyUrlBtn) {
       el.previewCopyUrlBtn.addEventListener('click', () => {
         if (state.previewItem) {
-          const url = state.previewItem.ha_url || getApiUrl('download', { path: state.previewItem.path });
-          copyToClipboard(url, 'HA URL copied to clipboard');
+          const url = state.previewItem.ha_url || state.previewItem.url || getApiUrl('download', { path: state.previewItem.path });
+          copyToClipboard(url, 'Direct link copied to clipboard');
         }
       });
     }
@@ -1326,17 +1706,22 @@
 
     // Browser Back / Forward History Navigation
     window.addEventListener('popstate', (e) => {
-      const path = (e.state && e.state.path !== undefined)
-        ? e.state.path
-        : getPathFromHash();
-      loadDirectory(path, false);
-    });
-
-    window.addEventListener('hashchange', () => {
-      const path = getPathFromHash();
-      if (path !== state.currentPath) {
-        loadDirectory(path, false);
+      const parsed = e.state ? { serverId: e.state.serverId || 'local', path: e.state.path || '' } : parseHash();
+      if (parsed.serverId !== state.activeServerId) {
+        state.activeServerId = parsed.serverId;
+        if (el.serverSelect) el.serverSelect.value = parsed.serverId;
+        if (parsed.serverId === 'local') {
+          if (el.remoteServerBanner) el.remoteServerBanner.style.display = 'none';
+        } else {
+          const srv = state.remoteServers.find(s => s.id === parsed.serverId);
+          if (srv && el.remoteServerBanner) {
+            el.remoteServerBanner.style.display = 'flex';
+            if (el.remoteServerBannerName) el.remoteServerBannerName.textContent = srv.display_name;
+            if (el.remoteServerBannerUrl) el.remoteServerBannerUrl.textContent = srv.url;
+          }
+        }
       }
+      loadDirectory(parsed.path, false);
     });
 
     // Global Keyboard Shortcuts
@@ -1352,6 +1737,8 @@
       }
       if (e.key === 'Escape') {
         closePreview();
+        closeServersModal();
+        closeKeysModal();
         closeNewFolderModal();
         closeRenameModal();
         closeDeleteModal();
@@ -1367,15 +1754,13 @@
   }
 
   // Initialization
-  function init() {
-    // Restore Theme
+  async function init() {
     document.body.setAttribute('data-theme', state.theme);
     if (el.themeIconSun && el.themeIconMoon) {
       el.themeIconSun.style.display = state.theme === 'dark' ? 'block' : 'none';
       el.themeIconMoon.style.display = state.theme === 'dark' ? 'none' : 'block';
     }
 
-    // Restore View Mode
     if (el.gridViewBtn && el.listViewBtn) {
       if (state.viewMode === 'grid') {
         el.gridViewBtn.classList.add('active');
@@ -1388,13 +1773,17 @@
 
     setupEventListeners();
 
-    // Check initial path from URL hash or start at root
-    const initialPath = getPathFromHash();
-    loadDirectory(initialPath, false);
+    await loadFederationServers();
+
+    const initial = parseHash();
+    if (initial.serverId !== 'local') {
+      setActiveServer(initial.serverId);
+    } else {
+      loadDirectory(initial.path, false);
+    }
     loadServerInfo();
   }
 
-  // Start immediately or on DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

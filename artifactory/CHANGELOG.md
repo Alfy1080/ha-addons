@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 — 2026-08-26
+
+### Added
+- **Multi-Node Federation (Client/Server Architecture)**: Connect multiple Artifactory deployments across different machines/servers.
+- **Node Switcher UI**: Switch instantly between Local Storage and registered Remote Servers in the navigation header.
+- **Key Generation & Management**: Generate cryptographically secure API keys to grant remote Artifactory instances or LLMs direct authenticated access.
+- **Server-to-Server Proxy Engine**: Securely browse, upload, edit, save, and download files on remote Artifactory servers via local proxy without exposing remote credentials in the browser or hitting CORS limits.
+- **Dynamic LLM Server Transparency**: Every remote server response automatically injects runtime-templated `llm_context` and `warning_for_llm` safeguards ensuring AI agents always know which physical machine they are viewing and modifying.
+
 ## 1.0.6 — 2026-08-26
 
 ### Added

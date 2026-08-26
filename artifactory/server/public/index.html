@@ -19,8 +19,27 @@
         </div>
         <div class="brand-text">
           <h1>Artifactory</h1>
-          <span class="host-badge" id="hostBadge">Home Assistant</span>
+          <span class="host-badge" id="hostBadge">Artifactory v1.1.0</span>
         </div>
+      </div>
+
+      <!-- Node / Server Switcher -->
+      <div class="server-selector-wrap">
+        <select id="serverSelect" class="server-select" title="Switch Artifactory Node">
+          <option value="local">📍 Local Server</option>
+        </select>
+        <button id="serversManagerBtn" class="btn-icon small header-fed-btn" title="Manage Remote Servers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+        </button>
+        <button id="keysManagerBtn" class="btn-icon small header-fed-btn" title="Manage API Keys">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+          </svg>
+        </button>
       </div>
 
       <div class="search-box">
@@ -81,8 +100,8 @@
           </button>
         </div>
 
-        <button id="themeToggleBtn" class="btn-icon" title="Toggle Dark/Light Mode">
-          <svg id="themeIconSun" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="themeToggleBtn" class="btn btn-icon" title="Toggle Light/Dark Theme">
+          <svg id="themeIconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
             <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -93,25 +112,43 @@
             <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
           </svg>
-          <svg id="themeIconMoon" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+          <svg id="themeIconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
         </button>
       </div>
     </header>
 
-    <!-- Navigation Breadcrumbs Bar -->
-    <nav class="navigation-bar">
-      <button id="navUpBtn" class="btn-icon small" title="Go Up One Level (Backspace)">
+    <!-- Remote Server Notification Banner -->
+    <div id="remoteServerBanner" class="remote-server-banner" style="display:none;">
+      <div class="remote-banner-info">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="15 18 9 12 15 6"></polyline>
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
         </svg>
-      </button>
-      <div id="breadcrumbs" class="breadcrumbs-container">
-        <!-- Generated dynamically -->
+        <span>Viewing Remote Node: <strong id="remoteServerBannerName"></strong> (<code id="remoteServerBannerUrl"></code>)</span>
       </div>
-      <div class="nav-right">
-        <button id="copyCurrentPathBtn" class="btn-subtle small" title="Copy Current Folder Direct URL">
+      <button id="exitRemoteServerBtn" class="btn btn-secondary small">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        <span>Return to Local</span>
+      </button>
+    </div>
+
+    <!-- Navigation / Breadcrumbs -->
+    <div class="navigation-bar">
+      <div class="nav-controls">
+        <button id="navUpBtn" class="btn-icon small" title="Go up one folder (Backspace)" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="breadcrumbs" id="breadcrumbs">
+        <div class="breadcrumb-item active">Root</div>
+      </div>
+      <div class="nav-actions">
+        <button id="copyCurrentPathBtn" class="btn btn-secondary small" title="Copy Current Folder URL">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -119,78 +156,66 @@
           <span>Copy Folder URL</span>
         </button>
       </div>
-    </nav>
-
-    <!-- Drop Zone Overlay & Progress Section -->
-    <div id="dropOverlay" class="drop-overlay">
-      <div class="drop-overlay-box">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="17 8 12 3 7 8"></polyline>
-          <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-        <h2>Drop files to upload</h2>
-        <p>Assets will be saved to the current directory</p>
-      </div>
     </div>
 
-    <!-- Upload Progress Widget -->
+    <!-- Upload Progress Drawer -->
     <div id="uploadProgressContainer" class="upload-progress-container" style="display:none;">
       <div class="upload-progress-header">
-        <span id="uploadStatusTitle">Uploading assets...</span>
+        <span id="uploadStatusTitle">Uploading files...</span>
         <button id="closeUploadProgressBtn" class="btn-icon small">&times;</button>
       </div>
-      <div class="upload-progress-bar-bg">
-        <div id="uploadProgressBar" class="upload-progress-bar" style="width: 0%;"></div>
+      <div class="progress-track">
+        <div id="uploadProgressBar" class="progress-fill" style="width: 0%;"></div>
       </div>
       <div id="uploadItemsList" class="upload-items-list"></div>
     </div>
 
-    <!-- Main Explorer Content -->
+    <!-- Main Workspace -->
     <main class="explorer-main" id="explorerMain">
-      <div id="loadingState" class="state-container" style="display:none;">
-        <div class="spinner"></div>
-        <p>Loading assets...</p>
+      <!-- Drag and Drop Overlay -->
+      <div id="dropOverlay" class="drop-overlay">
+        <div class="drop-overlay-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <h2>Drop files here to upload</h2>
+          <p>Files will be saved in the current folder</p>
+        </div>
       </div>
 
+      <!-- Loading State -->
+      <div id="loadingState" class="state-container" style="display:none;">
+        <div class="spinner"></div>
+        <p>Loading files and folders...</p>
+      </div>
+
+      <!-- Empty State -->
       <div id="emptyState" class="state-container" style="display:none;">
         <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
         </svg>
         <h3>This folder is empty</h3>
         <p>Drag and drop files here, or click the Upload button to host resources.</p>
-        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
-          <span>Upload Files</span>
-        </button>
       </div>
 
-      <!-- File Grid / List Container -->
-      <div id="filesContainer" class="files-container grid-view">
-        <!-- Rendered dynamically -->
-      </div>
+      <!-- Files and Folders Grid / List Container -->
+      <div id="filesContainer" class="files-container grid-view"></div>
     </main>
 
     <!-- Footer / Status Bar -->
-    <footer class="bottom-status-bar">
+    <footer class="status-bar">
       <div class="status-left">
         <span id="itemsSummary">0 items</span>
-        <span class="separator">•</span>
-        <span id="selectedCount" style="display:none;">0 selected</span>
       </div>
       <div class="status-right">
         <span id="storageInfo">Storage: Calculating...</span>
-        <span class="separator">•</span>
-        <span id="uploadLimitInfo">Max file: 500 MB</span>
       </div>
     </footer>
   </div>
 
-  <!-- Modal: Preview Dialog -->
+  <!-- Modal: Preview & In-Browser Code Editor Dialog -->
   <div id="previewModal" class="modal-overlay" style="display:none;">
     <div class="modal-card modal-preview">
       <div class="modal-header">
@@ -222,7 +247,7 @@
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            <span>Copy HA URL</span>
+            <span>Copy Direct Link</span>
           </button>
           <button id="previewDownloadBtn" class="btn btn-secondary small">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -236,7 +261,7 @@
         </div>
       </div>
       <div id="previewBody" class="modal-body preview-body">
-        <!-- Rendered preview content -->
+        <!-- Rendered preview or Code Editor -->
       </div>
       <div class="modal-footer preview-footer">
         <div class="file-meta-tags" id="previewMetaTags">
@@ -249,6 +274,119 @@
           <input type="text" id="previewDirectLinkInput" readonly>
           <button id="previewCopyInputBtn" class="btn btn-secondary small">Copy</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Remote Servers Manager -->
+  <div id="serversModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <h3>Remote Artifactory Servers</h3>
+        </div>
+        <button id="closeServersModalBtn" class="btn-icon small modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="fed-section">
+          <h4>Configured Remote Servers</h4>
+          <div id="serversListContainer" class="fed-list-container">
+            <p class="fed-empty">No remote servers added yet.</p>
+          </div>
+        </div>
+
+        <hr class="fed-divider">
+
+        <form id="addServerForm" class="fed-form">
+          <h4>Add New Remote Server</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="serverDisplayNameInput">Display Name</label>
+              <input type="text" id="serverDisplayNameInput" placeholder="e.g. Heimdall PROD, Yggdrasil NAS" required>
+            </div>
+            <div class="form-group">
+              <label for="serverUrlInput">Server URL</label>
+              <input type="url" id="serverUrlInput" placeholder="https://..." required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="serverApiKeyInput">Server API Key / Secret Token</label>
+            <input type="password" id="serverApiKeyInput" placeholder="art_sec_..." required autocomplete="off">
+          </div>
+
+          <details class="fed-advanced-details">
+            <summary>Cloudflare Access / Custom Headers (Optional)</summary>
+            <div class="form-row" style="margin-top: 0.75rem;">
+              <div class="form-group">
+                <label for="cfClientIdInput">CF-Access-Client-Id</label>
+                <input type="text" id="cfClientIdInput" placeholder="Optional Cloudflare Access Service Token ID">
+              </div>
+              <div class="form-group">
+                <label for="cfClientSecretInput">CF-Access-Client-Secret</label>
+                <input type="password" id="cfClientSecretInput" placeholder="Optional Cloudflare Access Secret">
+              </div>
+            </div>
+          </details>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+            <button type="button" id="testServerBtn" class="btn btn-secondary">Test Connection</button>
+            <button type="submit" id="submitServerBtn" class="btn btn-primary">Add Server</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: API Keys Manager -->
+  <div id="keysModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+          </svg>
+          <h3>Manage API Keys</h3>
+        </div>
+        <button id="closeKeysModalBtn" class="btn-icon small modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="fed-desc">Generate secure secret keys to allow remote client Artifactory deployments or LLMs to securely connect and browse this server.</p>
+
+        <div class="fed-section">
+          <h4>Active API Keys</h4>
+          <div id="keysListContainer" class="fed-list-container">
+            <p class="fed-empty">No API keys generated yet.</p>
+          </div>
+        </div>
+
+        <div id="newKeyAlertBox" class="fed-key-result" style="display:none;">
+          <div style="font-weight: 600; color: #10b981; margin-bottom: 0.25rem;">Key Generated Successfully!</div>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);">Copy this key now. For security, it will not be displayed in full again.</p>
+          <div class="direct-link-box" style="margin-top: 0.5rem;">
+            <input type="text" id="newKeyDisplayInput" readonly>
+            <button type="button" id="copyNewKeyBtn" class="btn btn-primary small">Copy Key</button>
+          </div>
+        </div>
+
+        <hr class="fed-divider">
+
+        <form id="generateKeyForm" class="fed-form">
+          <h4>Generate New Key</h4>
+          <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+              <label for="keyNameInput">Client / Application Name</label>
+              <input type="text" id="keyNameInput" placeholder="e.g. Yggdrasil Client, Automation Bot" required>
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+              <button type="submit" class="btn btn-primary">Generate Key</button>
+            </div>
+          </div>
+        </form>
       </div>
     </div>
   </div>
