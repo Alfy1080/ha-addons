@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4 — 2026-08-26
+
+### Fixed
+- Fixed root directory resolution when a mapped folder does not exist on disk, enabling clean folder navigation and auto-creation for writable roots.
+
 ## 1.0.3 — 2026-08-26
 
 ### Added

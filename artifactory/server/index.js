@@ -104,8 +104,8 @@ function resolvePath(virtualPath, mustExist = true) {
 
   if (mustExist && !fs.existsSync(resolved)) return null;
 
-  // For non-existent files, verify parent exists
-  if (!mustExist) {
+  // For non-existent subpaths, verify parent exists within root
+  if (!mustExist && resolved !== root.absolute) {
     const parent = path.dirname(resolved);
     if (!fs.existsSync(parent)) return null;
     const resolvedParent = path.resolve(parent);
@@ -237,7 +237,7 @@ app.get('/api/info', (req, res) => {
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.3',
+      version: '1.0.4',
       platform: 'Home Assistant Add-on',
       node_version: process.version,
     },
