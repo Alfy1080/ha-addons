@@ -237,7 +237,7 @@ app.get('/api/info', (req, res) => {
     success: true,
     server: {
       name: 'Artifactory',
-      version: '1.0.2',
+      version: '1.0.3',
       platform: 'Home Assistant Add-on',
       node_version: process.version,
     },
@@ -278,9 +278,9 @@ app.get('/api/list', (req, res) => {
     });
   }
 
-  const resolved = resolvePath(reqPath, true);
-  if (!resolved || !fs.statSync(resolved.absolute).isDirectory()) {
-    return res.status(404).json({ success: false, error: 'Directory not found or invalid path.' });
+  const resolved = resolvePath(reqPath, false);
+  if (!resolved) {
+    return res.status(404).json({ success: false, error: 'Invalid path or outside allowed roots.' });
   }
 
   // Build breadcrumbs
@@ -290,6 +290,32 @@ app.get('/api/list', (req, res) => {
   for (const part of pathParts) {
     cumulative = cumulative ? `${cumulative}/${part}` : part;
     breadcrumbs.push({ name: part, path: cumulative });
+  }
+
+  // If directory does not exist on disk
+  if (!fs.existsSync(resolved.absolute)) {
+    if (resolved.root.writable) {
+      try {
+        fs.mkdirSync(resolved.absolute, { recursive: true });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: `Failed to create directory: ${err.message}` });
+      }
+    } else {
+      return res.json({
+        success: true,
+        current_path: resolved.relative,
+        breadcrumbs,
+        total_items: 0,
+        items: [],
+        exists: false,
+        writable: false,
+        message: `Directory "${resolved.root.absolute}" does not exist on the filesystem.`,
+      });
+    }
+  }
+
+  if (!fs.statSync(resolved.absolute).isDirectory()) {
+    return res.status(400).json({ success: false, error: 'Target path is not a directory.' });
   }
 
   // List entries

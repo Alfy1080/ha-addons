@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3 — 2026-08-26
+
+### Added
+- **Access Permission Badges**: Added visual indicators on folder and file cards (Eye icon for Read-Only, Pencil icon for Write access) across Grid and List views.
+- **Browser History Integration**: Added HTML5 History API (`popstate` / URL hash routing) so the browser's Back and Forward buttons navigate within Artifactory without leaving the Ingress page.
+- **Direct Folder Bookmarking**: Deep linking via URL hash (`#/www/sunsync`, etc.).
+
+### Fixed
+- **Non-existent Folder Resilience**: Configured paths that do not exist on disk now open cleanly with proper breadcrumbs and an informative state message, allowing seamless navigation back. Auto-creation of missing directories for writable roots.
+
 ## 1.0.2 — 2026-08-26
 
 ### Fixed

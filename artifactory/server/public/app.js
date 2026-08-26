@@ -4,6 +4,7 @@
  *
  * Zero external dependencies, pure vanilla JS.
  * Ingress-compatible with dynamic path resolution.
+ * Supports Browser History (Back/Forward), Access Badges (Read/Write), and Graceful Error Handling.
  */
 
 (function () {
@@ -20,6 +21,17 @@
       return ingressMatch[1];
     }
     return pathname.replace(/\/[^/]*$/, '').replace(/\/+$/, '');
+  }
+
+  function getPathFromHash() {
+    const hash = window.location.hash || '';
+    if (hash.startsWith('#/')) {
+      return decodeURIComponent(hash.slice(2));
+    }
+    if (hash.startsWith('#') && hash.length > 1) {
+      return decodeURIComponent(hash.slice(1));
+    }
+    return '';
   }
 
   // Application State
@@ -210,7 +222,7 @@
     document.body.removeChild(textArea);
   }
 
-  // Icons Helper
+  // Icons & Badges Helpers
   function getFileIconSvg(item) {
     const isDir = item.type === 'dir' || item.type === 'directory';
     if (isDir) {
@@ -242,9 +254,56 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>';
   }
 
-  // Load Folder Content
-  async function loadDirectory(path = '') {
+  // Access Badge (Eye for Read-Only, Pencil for Write)
+  function getAccessBadgeHtml(item) {
+    const isWritable = item.writable === true;
+    if (isWritable) {
+      return `
+        <span class="access-badge badge-write" title="Write access (Upload, Edit, Delete)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+          <span>Write</span>
+        </span>
+      `;
+    }
+    return `
+      <span class="access-badge badge-read" title="Read-only access (Browse, Preview, Download)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <span>Read</span>
+      </span>
+    `;
+  }
+
+  function getAccessPillHtml(item) {
+    const isWritable = item.writable === true;
+    if (isWritable) {
+      return `
+        <span class="access-pill pill-write" title="Write access (Upload, Edit, Delete)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+          <span>Write</span>
+        </span>
+      `;
+    }
+    return `
+      <span class="access-pill pill-read" title="Read-only access (Browse, Preview, Download)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <span>Read</span>
+      </span>
+    `;
+  }
+
+  // Load Folder Content with History support
+  async function loadDirectory(path = '', pushHistory = true) {
+    path = (path || '').replace(/^\/+/, '').replace(/\/+$/, '');
     state.currentPath = path;
+
+    // Push to browser history so Back/Forward buttons navigate within Artifactory
+    if (pushHistory) {
+      const newHash = path ? `#/${path}` : '#';
+      if (window.location.hash !== newHash) {
+        history.pushState({ path }, '', newHash);
+      }
+    }
+
     if (el.loadingState) el.loadingState.style.display = 'flex';
     if (el.emptyState) el.emptyState.style.display = 'none';
     if (el.filesContainer) el.filesContainer.style.display = 'none';
@@ -258,19 +317,67 @@
         state.isReadOnly = true;
       } else if (state.items.length > 0) {
         state.isReadOnly = !state.items[0].writable;
+      } else if (data.writable !== undefined) {
+        state.isReadOnly = !data.writable;
       } else {
         state.isReadOnly = false;
       }
 
       renderBreadcrumbs();
-      renderItems();
+      renderItems(data.message);
       updateActionButtons();
     } catch (err) {
       showToast(err.message, 'error');
+
+      // Fallback breadcrumbs so user is NEVER stuck and can always click Root or parent
+      if (!state.breadcrumbs || state.breadcrumbs.length === 0 || state.breadcrumbs[state.breadcrumbs.length - 1].path !== path) {
+        const parts = path.split('/').filter(Boolean);
+        const fallbackBcs = [{ name: 'Root', path: '' }];
+        let accum = '';
+        parts.forEach(p => {
+          accum = accum ? `${accum}/${p}` : p;
+          fallbackBcs.push({ name: p, path: accum });
+        });
+        state.breadcrumbs = fallbackBcs;
+      }
+      renderBreadcrumbs();
+      renderErrorState(err.message);
     } finally {
       if (el.loadingState) el.loadingState.style.display = 'none';
     }
   }
+
+  // Render Error State with Go Back / Return to Root button
+  function renderErrorState(errorMessage) {
+    if (!el.filesContainer) return;
+    el.filesContainer.innerHTML = `
+      <div class="state-container" style="grid-column: 1 / -1; width: 100%;">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <h3>Folder Unavailable</h3>
+        <p>${escapeHtml(errorMessage || 'This folder could not be found or opened.')}</p>
+        <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
+          <button class="btn btn-secondary" onclick="window.history.back()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            <span>Go Back</span>
+          </button>
+          <button class="btn btn-primary" onclick="window.__artifactory_loadRoot()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+            <span>Return to Root</span>
+          </button>
+        </div>
+      </div>
+    `;
+    el.filesContainer.style.display = 'block';
+    if (el.emptyState) el.emptyState.style.display = 'none';
+  }
+
+  window.__artifactory_loadRoot = function () {
+    loadDirectory('');
+  };
 
   // Load Server Info
   async function loadServerInfo() {
@@ -363,7 +470,7 @@
   }
 
   // Render Items (Grid or List)
-  function renderItems() {
+  function renderItems(customMessage = null) {
     if (!el.filesContainer) return;
     const items = getProcessedItems();
     el.filesContainer.innerHTML = '';
@@ -375,7 +482,16 @@
     }
 
     if (items.length === 0) {
-      if (el.emptyState) el.emptyState.style.display = 'flex';
+      if (el.emptyState) {
+        el.emptyState.style.display = 'flex';
+        if (customMessage) {
+          const p = el.emptyState.querySelector('p');
+          if (p) p.textContent = customMessage;
+        } else {
+          const p = el.emptyState.querySelector('p');
+          if (p) p.textContent = 'Drag and drop files here, or click the Upload button to host resources.';
+        }
+      }
       el.filesContainer.style.display = 'none';
       return;
     }
@@ -411,8 +527,10 @@
       }
 
       const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+      const badgeHtml = getAccessBadgeHtml(item);
 
       card.innerHTML = `
+        ${badgeHtml}
         ${previewHtml}
         <div class="file-card-info">
           <div class="file-card-name">${escapeHtml(item.name)}</div>
@@ -442,7 +560,7 @@
 
       // Click card to open folder or preview file
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.file-card-actions')) return;
+        if (e.target.closest('.file-card-actions') || e.target.closest('.access-badge')) return;
         if (isDir) {
           loadDirectory(item.path);
         } else {
@@ -487,6 +605,7 @@
       <thead>
         <tr>
           <th data-sort="name">Name</th>
+          <th>Access</th>
           <th data-sort="size">Size</th>
           <th data-sort="mtime">Modified</th>
           <th style="text-align:right;">Actions</th>
@@ -501,6 +620,7 @@
       const isDir = item.type === 'dir' || item.type === 'directory';
       const tr = document.createElement('tr');
       const canWrite = state.currentPath && item.writable !== false && !state.isReadOnly;
+      const accessPill = getAccessPillHtml(item);
 
       tr.innerHTML = `
         <td>
@@ -509,6 +629,7 @@
             <span>${escapeHtml(item.name)}</span>
           </div>
         </td>
+        <td>${accessPill}</td>
         <td>${item.size_formatted || '-'}</td>
         <td>${item.mtime_formatted || '-'}</td>
         <td class="list-actions-cell">
@@ -967,6 +1088,21 @@
       });
     }
 
+    // Browser Back / Forward History Navigation
+    window.addEventListener('popstate', (e) => {
+      const path = (e.state && e.state.path !== undefined)
+        ? e.state.path
+        : getPathFromHash();
+      loadDirectory(path, false);
+    });
+
+    window.addEventListener('hashchange', () => {
+      const path = getPathFromHash();
+      if (path !== state.currentPath) {
+        loadDirectory(path, false);
+      }
+    });
+
     // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
@@ -1013,7 +1149,10 @@
     }
 
     setupEventListeners();
-    loadDirectory('');
+
+    // Check initial path from URL hash or start at root
+    const initialPath = getPathFromHash();
+    loadDirectory(initialPath, false);
     loadServerInfo();
   }
 

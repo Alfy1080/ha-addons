@@ -678,6 +678,69 @@ body {
   opacity: 1;
 }
 
+/* Access Permission Badges (Pencil = Write, Eye = Read) */
+.access-badge {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.12rem 0.38rem;
+  border-radius: 4px;
+  user-select: none;
+  z-index: 2;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.access-badge.badge-write {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.access-badge.badge-read {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.access-badge svg {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.access-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.access-pill.pill-write {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.access-pill.pill-read {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.access-pill svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 /* Files Container - List / Table View */
 .files-container.list-view {
   display: flex;
