@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Centralized Documentation Notice**: Future documentation, architectural updates, and standards must be maintained centrally in [**`Alfy1080/life-os`**](https://github.com/Alfy1080/life-os) (local: `~/github/life-os/`). Please reference [**`life-os/standards/`**](https://github.com/Alfy1080/life-os/tree/main/standards) for authoritative ecosystem standards.
+
 Configuration & Setup
 
 To get this runner working, you must configure it to talk to your specific GitHub repository.
