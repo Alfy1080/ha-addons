@@ -1,6 +1,3 @@
-> [!NOTE]
-> **Centralized Documentation Notice**: Future documentation, architectural updates, and standards must be maintained centrally in [**`Alfy1080/life-os`**](https://github.com/Alfy1080/life-os) (local: `~/github/life-os/`). Please reference [**`life-os/standards/`**](https://github.com/Alfy1080/life-os/tree/main/standards) for authoritative ecosystem standards.
-
 Configuration & Setup
 
 This add-on runs Honeygain to passively share your internet connection and earn rewards directly from your Home Assistant instance.
