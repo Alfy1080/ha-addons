@@ -1,4 +1,7 @@
 # Changelog
+## [2.338.0] - 2026-10-07
+- Automatically updated to version 2.338.0
+
 ## [2.337.0] - 2026-08-27
 - Automatically updated to version 2.337.0
 
